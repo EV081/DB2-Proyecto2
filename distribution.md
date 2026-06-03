@@ -29,14 +29,14 @@
 **Objetivo:** Consolidar el sistema multimodal, desplegar la interfaz de usuario y documentar los resultados experimentales.
 
 * **Frente de Integración Core Backend (Juan Carlos y Elmer):**
-* Consolidar las ramas `feature/signal-extraction` y `feature/custom-index` hacia la rama principal (`develop`/`main`).
-* Resolver conflictos de Git y asegurar la compatibilidad de las estructuras de datos (matrices, vectores e histogramas) entre la extracción de datos y el índice invertido en memoria.
-* Garantizar la fluidez del pipeline de búsqueda offline y online antes de la conexión externa.
+  * Consolidar las ramas `feature/signal-extraction` y `feature/custom-index` hacia la rama principal (`develop`/`main`).
+  * Resolver conflictos de Git y asegurar la compatibilidad de las estructuras de datos (matrices, vectores e histogramas) entre la extracción de datos y el índice invertido en memoria.
+  * Garantizar la fluidez del pipeline de búsqueda offline y online antes de la conexión externa.
 
 * **Frente de UI, Benchmarking e Informe (Josue, Paulo y Joseph):**
-* **Conexión con el Frontend:** Conectar las rutas de FastAPI con la interfaz visual en Streamlit o Gradio para permitir búsquedas interactivas (subir un audio/imagen/texto y mostrar el Top-K de resultados).
-* **Pruebas de Rendimiento (Benchmarking):** Ejecutar los scripts de evaluación masiva (`run_experiments.py`) para medir la latencia de búsqueda, consumo de memoria RAM y la métrica de *Recall*.
-* **Informe Técnico Final:** Redactar las secciones de arquitectura, metodología y analizar los gráficos de *trade-offs* (motor propio vs. `pgvector`) para el entregable final.
+  * **Conexión con el Frontend:** Conectar las rutas de FastAPI con la interfaz visual en Streamlit o Gradio para permitir búsquedas interactivas (subir un audio/imagen/texto y mostrar el Top-K de   resultados).
+  * **Pruebas de Rendimiento (Benchmarking):** Ejecutar los scripts de evaluación masiva (`run_experiments.py`) para medir la latencia de búsqueda, consumo de memoria RAM y la métrica de *Recall*.
+  * **Informe Técnico Final:** Redactar las secciones de arquitectura, metodología y analizar los gráficos de *trade-offs* (motor propio vs. `pgvector`) para el entregable final.
 
 Resumen detallado de la distribución de roles. Este formato les servirá como una excelente guía o "contrato de equipo" para que todos tengan claro su alcance desde el primer día:
 
