@@ -1,0 +1,12 @@
+{
+  "custom_engine": {
+    "avg_latency_ms": 30.08,
+    "peak_ram_mb": 533.11,
+    "recall@10": 0.8501
+  },
+  "pgvector": {
+    "avg_latency_ms": 15.38,
+    "peak_ram_mb": 767.22,
+    "recall@10": 0.8314
+  }
+}
