@@ -1,0 +1,14 @@
+{
+  "config": {
+    "num_queries": 50
+  },
+  "custom_engine": {
+    "avg_latency_ms": 0.02,
+    "peak_ram_mb": 19.42,
+    "recall@10": 0.9505,
+    "total_queries": 50
+  },
+  "pgvector": {
+    "error": "omitido por --skip-pgvector"
+  }
+}
