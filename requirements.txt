@@ -2,6 +2,7 @@ fastapi
 uvicorn==0.49.0
 sqlalchemy
 psycopg2-binary
+psutil
 python-dotenv
 pgvector
 python-multipart==0.0.32
