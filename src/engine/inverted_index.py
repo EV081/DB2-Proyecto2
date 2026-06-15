@@ -167,7 +167,68 @@ def _write_term(
     vocab[term] = {"offset": offset, "length": length, "df": len(postings)}
 
 
+class InvertedIndex:
+    def __init__(
+        self,
+        postings_path: str | Path,
+        vocab_path: str | Path,
+        n_docs: int = 0,
+    ) -> None:
+        self._postings_path = Path(postings_path)
+        self._vocab: dict[str, dict] = json.loads(
+            Path(vocab_path).read_text(encoding="utf-8")
+        )
+        self.n_docs = n_docs
+        self._fh = None
+        self.io_seeks = 0
+        self.io_read_bytes = 0
+
+    def open(self) -> "InvertedIndex":
+        if self._fh is None:
+            self._fh = self._postings_path.open("rb")
+        return self
+
+    def close(self) -> None:
+        if self._fh is not None:
+            self._fh.close()
+            self._fh = None
+
+    def __enter__(self) -> "InvertedIndex":
+        return self.open()
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    def vocab_size(self) -> int:
+        return len(self._vocab)
+
+    def df(self, term: str) -> int:
+        meta = self._vocab.get(term)
+        return meta["df"] if meta else 0
+
+    def has_term(self, term: str) -> bool:
+        return term in self._vocab
+
+    def get_postings(self, term: str) -> list[Posting]:
+        meta = self._vocab.get(term)
+        if meta is None:
+            return []
+        if self._fh is None:
+            self.open()
+        self._fh.seek(meta["offset"])
+        self.io_seeks += 1
+        raw = self._fh.read(meta["length"])
+        self.io_read_bytes += meta["length"]
+        obj = json.loads(raw)
+        return [(p[0], p[1]) for p in obj["p"]]
+
+    def reset_io_counters(self) -> None:
+        self.io_seeks = 0
+        self.io_read_bytes = 0
+
+
 __all__ = [
     "Posting", "PostingList", "TermFreqs", "DocStream",
     "spimi_invert", "iter_block", "merge_blocks",
+    "InvertedIndex",
 ]

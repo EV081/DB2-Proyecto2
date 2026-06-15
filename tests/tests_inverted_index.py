@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 from src.engine.inverted_index import (
+    InvertedIndex,
     PostingList,
     iter_block,
     merge_blocks,
@@ -233,6 +234,83 @@ def test_merge_blocks_postings_sorted_by_doc_id() -> None:
                 obj = json.loads(line)
                 doc_ids = [p[0] for p in obj["p"]]
                 assert doc_ids == sorted(doc_ids)
+
+
+def _build_text_index(tmp: str) -> tuple[Path, Path]:
+    blocks = spimi_invert(
+        iter(TEXT_COLLECTION.items()),
+        block_size_postings=4,
+        out_dir=Path(tmp) / "blocks",
+    )
+    return merge_blocks(blocks, Path(tmp) / "final")
+
+
+def test_inverted_index_loads_vocab() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        postings_path, vocab_path = _build_text_index(tmp)
+        idx = InvertedIndex(postings_path, vocab_path,
+                            n_docs=len(TEXT_COLLECTION))
+        assert idx.vocab_size() > 0
+        assert idx.n_docs == len(TEXT_COLLECTION)
+
+
+def test_inverted_index_get_postings_known_term() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        postings_path, vocab_path = _build_text_index(tmp)
+        with InvertedIndex(postings_path, vocab_path) as idx:
+            postings = idx.get_postings("love")
+            expected_docs = {
+                doc_id for doc_id, tf in TEXT_COLLECTION.items()
+                if tf.get("love", 0) > 0
+            }
+            assert {p[0] for p in postings} == expected_docs
+
+
+def test_inverted_index_unknown_term_returns_empty() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        postings_path, vocab_path = _build_text_index(tmp)
+        with InvertedIndex(postings_path, vocab_path) as idx:
+            assert idx.get_postings("noexiste") == []
+            assert idx.df("noexiste") == 0
+            assert not idx.has_term("noexiste")
+
+
+def test_inverted_index_io_counters_increment() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        postings_path, vocab_path = _build_text_index(tmp)
+        with InvertedIndex(postings_path, vocab_path) as idx:
+            assert idx.io_seeks == 0
+            assert idx.io_read_bytes == 0
+            idx.get_postings("love")
+            assert idx.io_seeks == 1
+            assert idx.io_read_bytes > 0
+            idx.get_postings("dance")
+            assert idx.io_seeks == 2
+            # Termino inexistente: no debe incrementar (no hay I/O)
+            idx.get_postings("ghost")
+            assert idx.io_seeks == 2
+
+
+def test_inverted_index_reset_io_counters() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        postings_path, vocab_path = _build_text_index(tmp)
+        with InvertedIndex(postings_path, vocab_path) as idx:
+            idx.get_postings("love")
+            idx.reset_io_counters()
+            assert idx.io_seeks == 0
+            assert idx.io_read_bytes == 0
+
+
+def test_inverted_index_df_matches_collection() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        postings_path, vocab_path = _build_text_index(tmp)
+        with InvertedIndex(postings_path, vocab_path) as idx:
+            for term in ["love", "dance", "cry"]:
+                expected_df = sum(
+                    1 for tf in TEXT_COLLECTION.values()
+                    if tf.get(term, 0) > 0
+                )
+                assert idx.df(term) == expected_df
 
 
 def _run_all() -> None:
