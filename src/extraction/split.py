@@ -1,9 +1,6 @@
 import os
 from typing import List
 
-import cv2
-import numpy as np
-
 
 # ===========================================================================
 # Texto — dividir en párrafos
@@ -19,7 +16,8 @@ def split_text(text: str, min_paragraph_chars: int = 20) -> List[str]:
 # Imagen — dividir en patches superpuestos
 # ===========================================================================
 # usar 32x32 y stride de 16 pixeles, las imagenes de los datasets son pequeñas
-def split_image(image_path: str, patch_size: int = 32, stride: int = 16) -> List[np.ndarray]:
+def split_image(image_path: str, patch_size: int = 32, stride: int = 16):
+    import cv2
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Imagen no encontrada: {image_path}")
     img = cv2.imread(image_path, cv2.IMREAD_COLOR)
@@ -43,10 +41,11 @@ def split_image(image_path: str, patch_size: int = 32, stride: int = 16) -> List
 # ===========================================================================
 # Audio — dividir en ventanas deslizantes
 # ===========================================================================
-def split_audio(audio_path: str, window_ms: int = 100, hop_ms: int = 50) -> np.ndarray:
+def split_audio(audio_path: str, window_ms: int = 100, hop_ms: int = 50):
+    import librosa
+    import numpy as np
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio no encontrado: {audio_path}")
-    import librosa
 
     y, sr = librosa.load(audio_path, sr=None, mono=True)
     window_len = int(sr * window_ms / 1000)
