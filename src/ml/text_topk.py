@@ -27,6 +27,10 @@ class TokKWords:
         """Acumula frecuencias de los tokens del documento."""
         self._counter.update(tokens)
 
+    def apply_document_tf(self, tf):
+        """Acumula frecuencias desde un dict {token: count} ya pre-contado."""
+        self._counter.update(tf)
+
     def close(self):
         """Selecciona las top_k palabras y limpia el contador."""
         self.bag_of_words = [word for word, _ in self._counter.most_common(self.top_k)]
