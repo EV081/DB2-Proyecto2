@@ -9,3 +9,6 @@ venv/
 bd.md
 Proyecto-2-anotaciones
 
+data/synthetic_*.jsonl
+data/spimi_index/
+
