@@ -4,7 +4,12 @@ import json
 import tempfile
 from pathlib import Path
 
-from src.engine.inverted_index import PostingList, iter_block, spimi_invert
+from src.engine.inverted_index import (
+    PostingList,
+    iter_block,
+    merge_blocks,
+    spimi_invert,
+)
 from src.engine.mock_data import TEXT_COLLECTION
 
 
@@ -154,6 +159,80 @@ def test_spimi_block_file_format_is_jsonl_per_term() -> None:
             lines = [json.loads(l) for l in f if l.strip()]
         assert all("t" in obj and "p" in obj for obj in lines)
         assert [obj["t"] for obj in lines] == ["x", "y"]
+
+
+def test_merge_blocks_unifies_terms_alphabetically() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        blocks = spimi_invert(
+            iter(TEXT_COLLECTION.items()),
+            block_size_postings=4,   # forzar varios bloques
+            out_dir=Path(tmp) / "blocks",
+        )
+        assert len(blocks) >= 2
+        postings_path, vocab_path = merge_blocks(blocks, Path(tmp) / "final")
+
+        with postings_path.open() as f:
+            terms = [json.loads(l)["t"] for l in f if l.strip()]
+        assert terms == sorted(terms)
+        assert len(terms) == len(set(terms))   # cada termino aparece una sola vez
+
+
+def test_merge_blocks_preserves_all_postings() -> None:
+    expected: dict[str, set] = {}
+    for doc_id, tf_doc in TEXT_COLLECTION.items():
+        for term, tf in tf_doc.items():
+            if tf > 0:
+                expected.setdefault(term, set()).add((doc_id, tf))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        blocks = spimi_invert(
+            iter(TEXT_COLLECTION.items()),
+            block_size_postings=3,
+            out_dir=Path(tmp) / "blocks",
+        )
+        postings_path, _ = merge_blocks(blocks, Path(tmp) / "final")
+
+        with postings_path.open() as f:
+            actual: dict[str, set] = {}
+            for line in f:
+                obj = json.loads(line)
+                actual[obj["t"]] = {(p[0], p[1]) for p in obj["p"]}
+
+    assert actual == expected
+
+
+def test_merge_blocks_vocab_offsets_locate_lines() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        blocks = spimi_invert(
+            iter(TEXT_COLLECTION.items()),
+            block_size_postings=4,
+            out_dir=Path(tmp) / "blocks",
+        )
+        postings_path, vocab_path = merge_blocks(blocks, Path(tmp) / "final")
+        vocab = json.loads(vocab_path.read_text())
+
+        with postings_path.open("rb") as f:
+            for term, meta in vocab.items():
+                f.seek(meta["offset"])
+                raw = f.read(meta["length"])
+                obj = json.loads(raw)
+                assert obj["t"] == term
+                assert len(obj["p"]) == meta["df"]
+
+
+def test_merge_blocks_postings_sorted_by_doc_id() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        blocks = spimi_invert(
+            iter(TEXT_COLLECTION.items()),
+            block_size_postings=3,
+            out_dir=Path(tmp) / "blocks",
+        )
+        postings_path, _ = merge_blocks(blocks, Path(tmp) / "final")
+        with postings_path.open() as f:
+            for line in f:
+                obj = json.loads(line)
+                doc_ids = [p[0] for p in obj["p"]]
+                assert doc_ids == sorted(doc_ids)
 
 
 def _run_all() -> None:

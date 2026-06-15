@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 import json
 from pathlib import Path
 from typing import Iterable, Iterator
@@ -117,7 +118,56 @@ def iter_block(path: Path) -> Iterator[tuple[str, list[Posting]]]:
             yield obj["t"], postings
 
 
+def merge_blocks(
+    block_paths: list[Path],
+    out_dir: str | Path,
+) -> tuple[Path, Path]:
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    postings_path = out / "final.postings"
+    vocab_path = out / "vocab.json"
+
+    iters = [iter_block(p) for p in block_paths]
+    merged = heapq.merge(*iters, key=lambda x: x[0])
+
+    vocab: dict[str, dict] = {}
+    current_term: str | None = None
+    current_postings: list[Posting] = []
+
+    with postings_path.open("w", encoding="utf-8") as f:
+        for term, postings in merged:
+            if term != current_term:
+                if current_term is not None:
+                    _write_term(f, current_term, current_postings, vocab)
+                current_term = term
+                current_postings = list(postings)
+            else:
+                current_postings.extend(postings)
+        if current_term is not None:
+            _write_term(f, current_term, current_postings, vocab)
+
+    with vocab_path.open("w", encoding="utf-8") as f:
+        json.dump(vocab, f, ensure_ascii=False)
+
+    return postings_path, vocab_path
+
+
+def _write_term(
+    f,
+    term: str,
+    postings: list[Posting],
+    vocab: dict[str, dict],
+) -> None:
+    postings.sort(key=lambda p: p[0])
+    offset = f.tell()
+    line = json.dumps({"t": term, "p": postings}, ensure_ascii=False)
+    f.write(line)
+    f.write("\n")
+    length = f.tell() - offset
+    vocab[term] = {"offset": offset, "length": length, "df": len(postings)}
+
+
 __all__ = [
     "Posting", "PostingList", "TermFreqs", "DocStream",
-    "spimi_invert", "iter_block",
+    "spimi_invert", "iter_block", "merge_blocks",
 ]
