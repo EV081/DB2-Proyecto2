@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from src.engine.inverted_index import PostingList
+import json
+import tempfile
+from pathlib import Path
+
+from src.engine.inverted_index import PostingList, iter_block, spimi_invert
+from src.engine.mock_data import TEXT_COLLECTION
 
 
 def test_posting_list_starts_empty() -> None:
@@ -77,6 +82,78 @@ def test_posting_list_doubling_doesnt_lose_data() -> None:
     # Capacity es potencia de 2 >= 1000
     assert pl.capacity() >= 1000
     assert (pl.capacity() & (pl.capacity() - 1)) == 0
+
+
+def test_spimi_single_block_when_collection_small() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        blocks = spimi_invert(
+            doc_stream=iter(TEXT_COLLECTION.items()),
+            block_size_postings=10_000,   # nada lo dispara, todo en un solo bloque
+            out_dir=tmp,
+        )
+        assert len(blocks) == 1
+        terms_block = [t for t, _ in iter_block(blocks[0])]
+        assert terms_block == sorted(terms_block)
+
+
+def test_spimi_multiple_blocks_when_threshold_low() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        blocks = spimi_invert(
+            doc_stream=iter(TEXT_COLLECTION.items()),
+            block_size_postings=5,        # umbral pequeño -> varios bloques
+            out_dir=tmp,
+        )
+        assert len(blocks) >= 2
+        for path in blocks:
+            terms = [t for t, _ in iter_block(path)]
+            assert terms == sorted(terms)
+
+
+def test_spimi_preserves_all_postings() -> None:
+    expected_total = sum(
+        sum(1 for tf in tf_doc.values() if tf > 0)
+        for tf_doc in TEXT_COLLECTION.values()
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        blocks = spimi_invert(
+            doc_stream=iter(TEXT_COLLECTION.items()),
+            block_size_postings=3,
+            out_dir=tmp,
+        )
+        total = 0
+        for path in blocks:
+            for _, postings in iter_block(path):
+                total += len(postings)
+        assert total == expected_total
+
+
+def test_spimi_skips_zero_tf() -> None:
+    docs = [
+        ("d1", {"a": 5, "b": 0, "c": 2}),
+        ("d2", {"a": 0, "c": 1}),
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        blocks = spimi_invert(iter(docs), block_size_postings=100, out_dir=tmp)
+        all_terms = []
+        for path in blocks:
+            for term, _ in iter_block(path):
+                all_terms.append(term)
+        assert "b" not in all_terms      # tf=0 nunca se indexa
+        assert set(all_terms) == {"a", "c"}
+
+
+def test_spimi_block_file_format_is_jsonl_per_term() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        blocks = spimi_invert(
+            iter([("d1", {"x": 1, "y": 2})]),
+            block_size_postings=100,
+            out_dir=tmp,
+        )
+        path = blocks[0]
+        with path.open() as f:
+            lines = [json.loads(l) for l in f if l.strip()]
+        assert all("t" in obj and "p" in obj for obj in lines)
+        assert [obj["t"] for obj in lines] == ["x", "y"]
 
 
 def _run_all() -> None:

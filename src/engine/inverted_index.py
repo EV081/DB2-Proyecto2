@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Iterator
+import json
+from pathlib import Path
+from typing import Iterable, Iterator
 
 Posting = tuple[str, int] #(doc_id, tf)
+TermFreqs = dict[str, int]
+DocStream = Iterable[tuple[str, TermFreqs]]
 
 
 class PostingList:
@@ -54,4 +58,66 @@ class PostingList:
             self._data[i] = p
 
 
-__all__ = ["Posting", "PostingList"]
+def _write_block(dictionary: dict[str, PostingList], path: Path) -> None:
+    with path.open("w", encoding="utf-8") as f:
+        for term in sorted(dictionary):
+            line = {"t": term, "p": dictionary[term].to_list()}
+            f.write(json.dumps(line, ensure_ascii=False))
+            f.write("\n")
+
+
+def spimi_invert(
+    doc_stream: DocStream,
+    block_size_postings: int,
+    out_dir: str | Path,
+) -> list[Path]:
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    block_paths: list[Path] = []
+    dictionary: dict[str, PostingList] = {}
+    posting_count = 0
+    block_idx = 0
+
+    for doc_id, tf_doc in doc_stream:
+        for term, tf in tf_doc.items():
+            if tf <= 0:
+                continue
+            pl = dictionary.get(term)
+            if pl is None:
+                pl = PostingList()
+                dictionary[term] = pl
+            pl.append(doc_id, tf)
+            posting_count += 1
+
+        if posting_count >= block_size_postings:
+            path = out / f"block_{block_idx:04d}.jsonl"
+            _write_block(dictionary, path)
+            block_paths.append(path)
+            dictionary = {}
+            posting_count = 0
+            block_idx += 1
+
+    if dictionary:
+        path = out / f"block_{block_idx:04d}.jsonl"
+        _write_block(dictionary, path)
+        block_paths.append(path)
+
+    return block_paths
+
+
+def iter_block(path: Path) -> Iterator[tuple[str, list[Posting]]]:
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            postings: list[Posting] = [(p[0], p[1]) for p in obj["p"]]
+            yield obj["t"], postings
+
+
+__all__ = [
+    "Posting", "PostingList", "TermFreqs", "DocStream",
+    "spimi_invert", "iter_block",
+]
