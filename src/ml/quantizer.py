@@ -15,144 +15,159 @@ import numpy as np
 
 class KClustering:
 
-    def __init__(self, k_centroids=100, clustering_algorithm="kmean", n_init=10):
+    def __init__(self, n_centroids=100, clustering_algorithm="kmean", n_init=5):
+        """
+        k_centroids: número de centroides o listas (termino de pgvector)
+        clustering_algorithm: algoritmo usado para la clusterización
+        n_init: veces que se repetirá el algoritmo
+        """
         self.centroids = []
-        self.k_centroids = k_centroids
+        self.n_centroids = n_centroids
         self.clustering_algorithm = clustering_algorithm
         self.n_init = n_init
 
     def euclidean_distance(self, vector_a, vector_b):
-        return float(np.linalg.norm(np.asarray(vector_a) - np.asarray(vector_b)))
+        a = np.asarray(vector_a)
+        b = np.asarray(vector_b)
+        diff = a - b
+        return float(np.sqrt(np.sum(diff * diff)))
+
+    def assign_centroid(self, vector):
+        """
+        Devuelve el índice del centroide más cercano al vector dado.
+        """
+        best_dist = float('inf')
+        best_idx = 0
+        for i, centroid in enumerate(self.centroids):
+            dist = self.euclidean_distance(vector, centroid)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+        return best_idx
+
+    def _adjust_centroid_kmean(self, data, assignments):
+        """
+        Cada centroide = promedio de los vectores asignados a él.
+        """
+        for i in range(self.n_centroids):
+            members = []
+            for j in range(len(data)):
+                if assignments[j] == i:
+                    members.append(data[j])
+            if members:
+                self.centroids[i] = np.mean(members, axis=0)
+
+    def _adjust_centroid_kmedoid(self, data, assignments):
+        """
+        Cada centroide = punto del cluster que minimiza la suma
+        de distancias a los demás miembros.
+        """
+        for i in range(self.n_centroids):
+            members_idx = []
+            for j in range(len(data)):
+                if assignments[j] == i:
+                    members_idx.append(j)
+            if members_idx:
+                best_idx = members_idx[0]
+                best_cost = float('inf')
+                for candidate in members_idx:
+                    cost = 0.0
+                    for m in members_idx:
+                        cost += self.euclidean_distance(
+                            data[candidate], data[m]
+                        )
+                    if cost < best_cost:
+                        best_cost = cost
+                        best_idx = candidate
+                self.centroids[i] = data[best_idx].copy()
+
+    def _acumulate_error(self, data, assignments):
+        """
+        Suma de distancias de cada punto al centroide que le tocó.
+        Mide qué tan compactos son los clusters.
+        """
+        total = 0.0
+        for i in range(len(data)):
+            total += self.euclidean_distance(
+                data[i], self.centroids[assignments[i]]
+            )
+        return total
 
     def nearest_centroid(self, vector):
-        vector = np.asarray(vector)
-        centroids_arr = np.asarray(self.centroids)
-        distances = np.linalg.norm(centroids_arr - vector, axis=1)
-        nearest_index = int(np.argmin(distances))
-        return nearest_index, self.centroids[nearest_index]
-
-    def _kmeans_run(self, points):
-        n_samples = points.shape[0]
-        indices = np.random.choice(n_samples, self.k_centroids, replace=False)
-        centroids = points[indices].tolist()
-
-        for _ in range(100):
-            centroids_arr = np.asarray(centroids)
-            pairwise = np.linalg.norm(points[:, np.newaxis] - centroids_arr, axis=2)
-            labels = np.argmin(pairwise, axis=1)
-
-            new_centroids = []
-            for i in range(self.k_centroids):
-                mask = labels == i
-                if np.any(mask):
-                    new_centroids.append(points[mask].mean(axis=0))
-                else:
-                    new_centroids.append(centroids[i])
-
-            new_centroids_arr = np.asarray(new_centroids)
-            shift = np.linalg.norm(new_centroids_arr - centroids_arr)
-            centroids = new_centroids_arr.tolist()
-
-            if shift < 1e-6:
-                break
-
-        centroids_arr = np.asarray(centroids)
-        pairwise = np.linalg.norm(points[:, np.newaxis] - centroids_arr, axis=2)
-        inertia = float(np.sum(np.min(pairwise ** 2, axis=1)))
-        return labels, centroids, inertia
-
-    def _kmeans(self, points):
-        best_labels = None
-        best_centroids = None
-        best_inertia = np.inf
-
-        for _ in range(self.n_init):
-            labels, centroids, inertia = self._kmeans_run(points)
-            if inertia < best_inertia:
-                best_inertia = inertia
-                best_labels = labels
-                best_centroids = centroids
-
-        self.centroids = best_centroids
-        return best_labels, self.centroids
-
-    def _kmedoids_run(self, points):
-        n_samples = points.shape[0]
-        indices = np.random.choice(n_samples, self.k_centroids, replace=False)
-        centroids = points[indices].tolist()
-
-        for _ in range(100):
-            centroids_arr = np.asarray(centroids)
-            pairwise = np.linalg.norm(points[:, np.newaxis] - centroids_arr, axis=2)
-            labels = np.argmin(pairwise, axis=1)
-
-            new_centroids = []
-            for i in range(self.k_centroids):
-                mask = labels == i
-                if np.any(mask):
-                    cluster_points = points[mask]
-                    cluster_dists = np.linalg.norm(
-                        cluster_points[:, np.newaxis] - cluster_points, axis=2
-                    )
-                    medoid_idx = int(np.argmin(cluster_dists.sum(axis=1)))
-                    new_centroids.append(cluster_points[medoid_idx])
-                else:
-                    new_centroids.append(centroids[i])
-
-            new_centroids_arr = np.asarray(new_centroids)
-            shift = np.linalg.norm(new_centroids_arr - centroids_arr)
-            centroids = new_centroids_arr.tolist()
-
-            if shift < 1e-6:
-                break
-
-        centroids_arr = np.asarray(centroids)
-        pairwise = np.linalg.norm(points[:, np.newaxis] - centroids_arr, axis=2)
-        inertia = float(np.sum(np.min(pairwise ** 2, axis=1)))
-        return labels, centroids, inertia
-
-    def _kmedoids(self, points):
-        best_labels = None
-        best_centroids = None
-        best_inertia = np.inf
-
-        for _ in range(self.n_init):
-            labels, centroids, inertia = self._kmedoids_run(points)
-            if inertia < best_inertia:
-                best_inertia = inertia
-                best_labels = labels
-                best_centroids = centroids
-
-        self.centroids = best_centroids
-        return best_labels, self.centroids
+        """
+        Para un vector nuevo, devuelve (índice, centroide) del más cercano.
+        """
+        best_dist = float('inf')
+        best_idx = 0
+        for i, centroid in enumerate(self.centroids):
+            dist = self.euclidean_distance(vector, centroid)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+        return best_idx, self.centroids[best_idx]
 
     def clusterize_by_matrix(self, matrix):
-        points = np.asarray(matrix)
+        data = np.asarray(matrix)
+        n_points = len(data)
+        self.n_centroids = min(self.n_centroids, n_points)
 
-        if self.clustering_algorithm == "kmean":
-            return self._kmeans(points)
-        elif self.clustering_algorithm == "kmedoid":
-            return self._kmedoids(points)
-        else:
-            raise ValueError(
-                f"Unknown algorithm: {self.clustering_algorithm}. "
-                "Use 'kmean' or 'kmedoid'."
-            )
+        best_centroids = None
+        best_assignments = None
+        best_error = float('inf')
+
+        for iter_1 in range(self.n_init):
+            random_idx = np.random.choice(n_points, self.n_centroids, replace=False)
+            self.centroids = [data[i].copy() for i in random_idx]
+
+            for iter_2 in range(100):
+                assignments = [-1] * n_points
+                for i in range(n_points):
+                    assignments[i] = self.assign_centroid(data[i])
+
+                old_centroids = [c.copy() for c in self.centroids]
+
+                if self.clustering_algorithm == "kmean":
+                    self._adjust_centroid_kmean(data, assignments)
+                elif self.clustering_algorithm == "kmedoid":
+                    self._adjust_centroid_kmedoid(data, assignments)
+                else:
+                    raise ValueError(
+                        f"Algoritmo desconocido: '{self.clustering_algorithm}'. "
+                        "Usa 'kmean' o 'kmedoid'."
+                    )
+
+                max_movement = 0.0
+                for old, new in zip(old_centroids, self.centroids):
+                    movement = self.euclidean_distance(old, new)
+                    if movement > max_movement:
+                        max_movement = movement
+
+                if max_movement < 1e-6:
+                    break
+
+            error = self._acumulate_error(data, assignments)
+            if error < best_error:
+                best_error = error
+                best_centroids = [c.copy() for c in self.centroids]
+                best_assignments = assignments[:]
+
+        self.centroids = best_centroids
+        return np.array(best_assignments), best_centroids
+
 
 
 if __name__ == "__main__":
-    import numpy as np
 
     data = np.array([1, 2, 4, 5, 9, 10, 14, 18, 22], dtype=float).reshape(-1, 1)
 
-    km = KClustering(k_centroids=3, clustering_algorithm="kmean")
+    km = KClustering(n_centroids=3, clustering_algorithm="kmean")
     labels, centroids = km.clusterize_by_matrix(data)
 
     print("Datos originales:", data.ravel())
     print("Centroides finales:", np.array(centroids).ravel())
     print()
 
-    for i in range(km.k_centroids):
+    for i in range(km.n_centroids):
         cluster_points = data[labels == i].ravel()
         print(f"Cluster {i}: {cluster_points}  (centroide={np.array(centroids[i]).ravel()})")
 
