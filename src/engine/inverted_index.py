@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import heapq
 import json
+from math import log10, sqrt
 from pathlib import Path
 from typing import Iterable, Iterator
+
+from src.engine.similarity import log_tf
 
 Posting = tuple[str, int] #(doc_id, tf)
 TermFreqs = dict[str, int]
@@ -167,18 +170,63 @@ def _write_term(
     vocab[term] = {"offset": offset, "length": length, "df": len(postings)}
 
 
+def build_meta(
+    postings_path: str | Path,
+    vocab_path: str | Path,
+    out_dir: str | Path,
+) -> Path:
+    vocab = json.loads(Path(vocab_path).read_text(encoding="utf-8"))
+
+    doc_ids: set[str] = set()
+    with Path(postings_path).open("r", encoding="utf-8") as f:
+        for line in f:
+            obj = json.loads(line)
+            for doc_id, _ in obj["p"]:
+                doc_ids.add(doc_id)
+    n_docs = len(doc_ids)
+
+    norms_sq: dict[str, float] = {}
+    with Path(postings_path).open("r", encoding="utf-8") as f:
+        for line in f:
+            obj = json.loads(line)
+            term = obj["t"]
+            df_t = vocab[term]["df"]
+            idf_t = log10(n_docs / df_t) if df_t > 0 else 0.0
+            for doc_id, tf_d in obj["p"]:
+                w = log_tf(tf_d) * idf_t
+                norms_sq[doc_id] = norms_sq.get(doc_id, 0.0) + w * w
+
+    doc_norms = {doc_id: sqrt(s) for doc_id, s in norms_sq.items()}
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    meta_path = out / "meta.json"
+    meta_path.write_text(
+        json.dumps({"n_docs": n_docs, "doc_norms": doc_norms}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return meta_path
+
+
 class InvertedIndex:
     def __init__(
         self,
         postings_path: str | Path,
         vocab_path: str | Path,
+        meta_path: str | Path | None = None,
         n_docs: int = 0,
     ) -> None:
         self._postings_path = Path(postings_path)
         self._vocab: dict[str, dict] = json.loads(
             Path(vocab_path).read_text(encoding="utf-8")
         )
-        self.n_docs = n_docs
+        if meta_path is not None:
+            meta = json.loads(Path(meta_path).read_text(encoding="utf-8"))
+            self.n_docs: int = meta["n_docs"]
+            self._doc_norms: dict[str, float] = meta["doc_norms"]
+        else:
+            self.n_docs = n_docs
+            self._doc_norms = {}
         self._fh = None
         self.io_seeks = 0
         self.io_read_bytes = 0
@@ -226,9 +274,53 @@ class InvertedIndex:
         self.io_seeks = 0
         self.io_read_bytes = 0
 
+    def search_topk(
+        self,
+        query_tf: TermFreqs,
+        k: int = 10,
+    ) -> list[tuple[str, float]]:
+        if self.n_docs <= 0:
+            raise ValueError("n_docs no esta seteado; usar meta_path o n_docs=N")
+        if not self._doc_norms:
+            raise ValueError("doc_norms no cargado; usar meta_path o build_meta()")
+
+        q_weights: dict[str, float] = {}
+        for term, tf in query_tf.items():
+            if tf <= 0:
+                continue
+            df_t = self.df(term)
+            if df_t == 0:
+                continue
+            idf_t = log10(self.n_docs / df_t)
+            q_weights[term] = log_tf(tf) * idf_t
+
+        if not q_weights:
+            return []
+
+        q_norm = sqrt(sum(w * w for w in q_weights.values()))
+        if q_norm == 0.0:
+            return []
+
+        scores: dict[str, float] = {}
+        for term, w_q in q_weights.items():
+            df_t = self.df(term)
+            idf_t = log10(self.n_docs / df_t)
+            for doc_id, tf_d in self.get_postings(term):
+                w_d = log_tf(tf_d) * idf_t
+                scores[doc_id] = scores.get(doc_id, 0.0) + w_q * w_d
+
+        for doc_id in scores:
+            d_norm = self._doc_norms.get(doc_id, 0.0)
+            if d_norm > 0:
+                scores[doc_id] /= (q_norm * d_norm)
+            else:
+                scores[doc_id] = 0.0
+
+        return heapq.nlargest(k, scores.items(), key=lambda x: x[1])
+
 
 __all__ = [
     "Posting", "PostingList", "TermFreqs", "DocStream",
-    "spimi_invert", "iter_block", "merge_blocks",
+    "spimi_invert", "iter_block", "merge_blocks", "build_meta",
     "InvertedIndex",
 ]

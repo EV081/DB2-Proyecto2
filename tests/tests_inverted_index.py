@@ -7,11 +7,18 @@ from pathlib import Path
 from src.engine.inverted_index import (
     InvertedIndex,
     PostingList,
+    build_meta,
     iter_block,
     merge_blocks,
     spimi_invert,
 )
-from src.engine.mock_data import TEXT_COLLECTION
+from src.engine.mock_data import TEXT_COLLECTION, TEXT_QUERIES
+from src.engine.similarity import (
+    build_tfidf_index,
+    cosine_similarity,
+    top_k,
+    vectorize_query,
+)
 
 
 def test_posting_list_starts_empty() -> None:
@@ -311,6 +318,80 @@ def test_inverted_index_df_matches_collection() -> None:
                     if tf.get(term, 0) > 0
                 )
                 assert idx.df(term) == expected_df
+
+
+def _build_full_text_index(tmp: str) -> tuple[Path, Path, Path]:
+    blocks = spimi_invert(
+        iter(TEXT_COLLECTION.items()),
+        block_size_postings=4,
+        out_dir=Path(tmp) / "blocks",
+    )
+    postings_path, vocab_path = merge_blocks(blocks, Path(tmp) / "final")
+    meta_path = build_meta(postings_path, vocab_path, Path(tmp) / "final")
+    return postings_path, vocab_path, meta_path
+
+
+def test_build_meta_counts_distinct_docs() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        _, _, meta_path = _build_full_text_index(tmp)
+        meta = json.loads(meta_path.read_text())
+        assert meta["n_docs"] == len(TEXT_COLLECTION)
+        assert set(meta["doc_norms"]) == set(TEXT_COLLECTION)
+
+
+def test_build_meta_doc_norms_match_dense_pipeline() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        _, _, meta_path = _build_full_text_index(tmp)
+        meta = json.loads(meta_path.read_text())
+        # Vectores densos sin normalizar -> calcular norma a mano
+        from math import sqrt
+        from src.engine.similarity import document_frequency, tfidf_vector
+        df = document_frequency(TEXT_COLLECTION)
+        n = len(TEXT_COLLECTION)
+        for doc_id, tf_doc in TEXT_COLLECTION.items():
+            v = tfidf_vector(tf_doc, df, n)
+            expected_norm = sqrt(sum(w * w for w in v.values()))
+            assert abs(meta["doc_norms"][doc_id] - expected_norm) < 1e-9
+
+
+def test_search_topk_matches_dense_baseline() -> None:
+    dense_index, df, n = build_tfidf_index(TEXT_COLLECTION)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        postings_path, vocab_path, meta_path = _build_full_text_index(tmp)
+        with InvertedIndex(postings_path, vocab_path, meta_path) as idx:
+            for q_id, q_tf in TEXT_QUERIES.items():
+                q_vec = vectorize_query(q_tf, df, n)
+                dense_full = top_k(q_vec, dense_index, k=len(TEXT_COLLECTION),
+                                   score=cosine_similarity)
+                dense_nonzero = [(d, s) for d, s in dense_full if s > 0]
+                spimi_full = idx.search_topk(q_tf, k=len(TEXT_COLLECTION))
+                spimi_nonzero = [(d, s) for d, s in spimi_full if s > 0]
+
+                assert [d for d, _ in dense_nonzero] == \
+                       [d for d, _ in spimi_nonzero], \
+                       f"ranking divergente para {q_id}"
+                for (_, s1), (_, s2) in zip(dense_nonzero, spimi_nonzero):
+                    assert abs(s1 - s2) < 1e-9, f"score divergente {q_id}"
+
+
+def test_search_topk_unknown_query_returns_empty() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        postings_path, vocab_path, meta_path = _build_full_text_index(tmp)
+        with InvertedIndex(postings_path, vocab_path, meta_path) as idx:
+            assert idx.search_topk({"noexiste": 5, "tampoco": 1}, k=10) == []
+
+
+def test_search_topk_only_touches_relevant_terms() -> None:
+    # El accumulator solo deberia leer las posting lists de los terminos
+    # de la query, no todas. I/O seeks == # terminos validos en la query.
+    with tempfile.TemporaryDirectory() as tmp:
+        postings_path, vocab_path, meta_path = _build_full_text_index(tmp)
+        with InvertedIndex(postings_path, vocab_path, meta_path) as idx:
+            query = {"love": 3, "heart": 1, "noexiste": 99}
+            idx.search_topk(query, k=5)
+            valid_terms = sum(1 for t in query if idx.has_term(t))
+            assert idx.io_seeks == valid_terms
 
 
 def _run_all() -> None:
