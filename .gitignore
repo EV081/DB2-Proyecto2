@@ -9,3 +9,8 @@ venv/
 bd.md
 Proyecto-2-anotaciones
 
+# corpus sinteticos para benchmark SPIMI (reproducibles via --seed)
+data/synthetic_*.jsonl
+# indice intermedio generado por el benchmark
+data/spimi_index/
+
