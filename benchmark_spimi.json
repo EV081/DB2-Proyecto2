@@ -1,0 +1,86 @@
+[
+  {
+    "corpus": "synthetic_1k.jsonl",
+    "n_docs": 1000,
+    "n_queries": 100,
+    "build": {
+      "spimi_seconds": 0.221,
+      "spimi_peak_ram_mb": 7.61,
+      "dense_seconds": 0.05,
+      "dense_peak_ram_mb": 9.41,
+      "block_size_postings": 500000,
+      "num_blocks": 1
+    },
+    "query": {
+      "spimi": {
+        "avg_ms": 0.4701,
+        "p50_ms": 0.4958,
+        "p95_ms": 0.9342,
+        "io_seeks_total": 277,
+        "io_read_bytes_total": 2151929,
+        "io_seeks_per_query": 2.77
+      },
+      "dense": {
+        "avg_ms": 4.3579,
+        "p50_ms": 4.3614,
+        "p95_ms": 5.0868
+      }
+    }
+  },
+  {
+    "corpus": "synthetic_10k.jsonl",
+    "n_docs": 10000,
+    "n_queries": 100,
+    "build": {
+      "spimi_seconds": 1.877,
+      "spimi_peak_ram_mb": 23.46,
+      "dense_seconds": 0.523,
+      "dense_peak_ram_mb": 93.11,
+      "block_size_postings": 500000,
+      "num_blocks": 2
+    },
+    "query": {
+      "spimi": {
+        "avg_ms": 5.5068,
+        "p50_ms": 5.8398,
+        "p95_ms": 11.5756,
+        "io_seeks_total": 277,
+        "io_read_bytes_total": 21559046,
+        "io_seeks_per_query": 2.77
+      },
+      "dense": {
+        "avg_ms": 47.4588,
+        "p50_ms": 47.4934,
+        "p95_ms": 53.5824
+      }
+    }
+  },
+  {
+    "corpus": "synthetic_100k.jsonl",
+    "n_docs": 100000,
+    "n_queries": 100,
+    "build": {
+      "spimi_seconds": 23.544,
+      "spimi_peak_ram_mb": 50.57,
+      "dense_seconds": 5.356,
+      "dense_peak_ram_mb": 1075.67,
+      "block_size_postings": 500000,
+      "num_blocks": 18
+    },
+    "query": {
+      "spimi": {
+        "avg_ms": 89.9797,
+        "p50_ms": 93.5065,
+        "p95_ms": 201.0825,
+        "io_seeks_total": 278,
+        "io_read_bytes_total": 217460143,
+        "io_seeks_per_query": 2.78
+      },
+      "dense": {
+        "avg_ms": 463.152,
+        "p50_ms": 466.5485,
+        "p95_ms": 504.2422
+      }
+    }
+  }
+]
