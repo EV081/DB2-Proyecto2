@@ -1,0 +1,85 @@
+{
+  "k": 10,
+  "n_queries": 100,
+  "seed": 7,
+  "music_label": "genre",
+  "fashion_label": "subcategory",
+  "music_lyrics": {
+    "spimi": {
+      "recall_at_k": 0.0001,
+      "precision_at_k": 0.0053,
+      "recall_norm_at_k": 0.0052,
+      "f1_at_k": 0.0002,
+      "evaluated": 96
+    },
+    "gin": {
+      "recall_at_k": 0.0011,
+      "precision_at_k": 0.0317,
+      "recall_norm_at_k": 0.0197,
+      "f1_at_k": 0.0021,
+      "evaluated": 71
+    },
+    "gist": {
+      "recall_at_k": 0.0011,
+      "precision_at_k": 0.0317,
+      "recall_norm_at_k": 0.0197,
+      "f1_at_k": 0.0021,
+      "evaluated": 71
+    }
+  },
+  "music_audio": {
+    "spimi": {
+      "recall_at_k": 0.0025,
+      "precision_at_k": 0.2967,
+      "recall_norm_at_k": 0.267,
+      "f1_at_k": 0.005,
+      "evaluated": 100
+    },
+    "pgvector": {
+      "recall_at_k": 0.0021,
+      "precision_at_k": 0.2533,
+      "recall_norm_at_k": 0.228,
+      "f1_at_k": 0.0041,
+      "evaluated": 100
+    }
+  },
+  "fashion_desc": {
+    "spimi": {
+      "recall_at_k": 0.0053,
+      "precision_at_k": 0.9722,
+      "recall_norm_at_k": 0.878,
+      "f1_at_k": 0.0106,
+      "evaluated": 100
+    },
+    "gin": {
+      "recall_at_k": 0.0027,
+      "precision_at_k": 1.0,
+      "recall_norm_at_k": 0.4756,
+      "f1_at_k": 0.0055,
+      "evaluated": 45
+    },
+    "gist": {
+      "recall_at_k": 0.0027,
+      "precision_at_k": 1.0,
+      "recall_norm_at_k": 0.4756,
+      "f1_at_k": 0.0055,
+      "evaluated": 45
+    }
+  },
+  "fashion_image": {
+    "spimi": {
+      "recall_at_k": 0.0014,
+      "precision_at_k": 0.4878,
+      "recall_norm_at_k": 0.439,
+      "f1_at_k": 0.0027,
+      "evaluated": 100
+    },
+    "pgvector": {
+      "recall_at_k": 0.0013,
+      "precision_at_k": 0.5148,
+      "recall_norm_at_k": 0.465,
+      "f1_at_k": 0.0027,
+      "evaluated": 100
+    }
+  }
+}
