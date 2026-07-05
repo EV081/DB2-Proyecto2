@@ -1,8 +1,6 @@
 import os
-
 import cv2
 import numpy as np
-
 from .split import split_image
 
 VALID_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp')
