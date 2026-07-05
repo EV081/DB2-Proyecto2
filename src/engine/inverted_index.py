@@ -1,17 +1,14 @@
 from __future__ import annotations
-
 import heapq
 import json
 from math import log10, sqrt
 from pathlib import Path
 from typing import Iterable, Iterator
-
 from src.engine.similarity import log_tf
 
 Posting = tuple[str, int] #(doc_id, tf)
 TermFreqs = dict[str, int]
 DocStream = Iterable[tuple[str, TermFreqs]]
-
 
 class PostingList:
     __slots__ = ("_data", "_size")
@@ -285,6 +282,7 @@ class InvertedIndex:
             raise ValueError("doc_norms no cargado; usar meta_path o build_meta()")
 
         q_weights: dict[str, float] = {}
+        idf_map: dict[str, float] = {}
         for term, tf in query_tf.items():
             if tf <= 0:
                 continue
@@ -292,6 +290,7 @@ class InvertedIndex:
             if df_t == 0:
                 continue
             idf_t = log10(self.n_docs / df_t)
+            idf_map[term] = idf_t
             q_weights[term] = log_tf(tf) * idf_t
 
         if not q_weights:
@@ -303,8 +302,7 @@ class InvertedIndex:
 
         scores: dict[str, float] = {}
         for term, w_q in q_weights.items():
-            df_t = self.df(term)
-            idf_t = log10(self.n_docs / df_t)
+            idf_t = idf_map[term]
             for doc_id, tf_d in self.get_postings(term):
                 w_d = log_tf(tf_d) * idf_t
                 scores[doc_id] = scores.get(doc_id, 0.0) + w_q * w_d

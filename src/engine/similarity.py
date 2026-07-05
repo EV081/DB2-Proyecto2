@@ -7,10 +7,7 @@ Vector = dict[str, float]
 TermFreqs = dict[str, int]
 Collection = dict[str, TermFreqs]
 
-
-# ===========================================================================
 # Pesos: log-TF, IDF, TF-IDF  
-# ===========================================================================
 def log_tf(tf_raw: int | float) -> float:
     if tf_raw <= 0:
         return 0.0
@@ -56,9 +53,7 @@ def l2_normalize(v: Vector) -> Vector:
     return {k: w / n for k, w in v.items()}
 
 
-# ===========================================================================
 # Producto punto y normas
-# ===========================================================================
 def dot(a: Vector, b: Vector) -> float:
     if len(a) > len(b):
         a, b = b, a
@@ -69,9 +64,7 @@ def l2_norm(a: Vector) -> float:
     return sqrt(sum(w * w for w in a.values()))
 
 
-# ===========================================================================
 # Coseno
-# ===========================================================================
 def cosine_similarity(a: Vector, b: Vector) -> float:
     na, nb = l2_norm(a), l2_norm(b)
     if na == 0.0 or nb == 0.0:
@@ -83,9 +76,7 @@ def cosine_distance(a: Vector, b: Vector) -> float:
     return 1.0 - cosine_similarity(a, b)
 
 
-# ===========================================================================
-# 4) Minkowski — Manhattan, Euclidiana, Chebyshev
-# ===========================================================================
+# Minkowski — Manhattan, Euclidiana, Chebyshev
 def minkowski_distance(a: Vector, b: Vector, p: float) -> float:
     keys = set(a) | set(b)
     if p == float("inf"):
@@ -107,9 +98,7 @@ def euclidean_distance(a: Vector, b: Vector) -> float:
 def chebyshev_distance(a: Vector, b: Vector) -> float:
     return minkowski_distance(a, b, p=float("inf"))
 
-# ===========================================================================
 # Ranking Top-K
-# ===========================================================================
 ScoreFn = Callable[[Vector, Vector], float]
 
 
@@ -126,9 +115,7 @@ def top_k(
     return sorted(scored, key=lambda x: x[1], reverse=higher_is_better)[:k]
 
 
-# ===========================================================================
 # Helper end-to-end: indexar colección -> consultar query
-# ===========================================================================
 def build_tfidf_index(
     collection: Collection,
     use_log_tf: bool = True,
