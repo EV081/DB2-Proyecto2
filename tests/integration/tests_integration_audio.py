@@ -1,11 +1,8 @@
 from __future__ import annotations
-
 import tempfile
 from pathlib import Path
-
 import numpy as np
 import soundfile as sf
-
 from src.engine.audio_pipeline import (
     build_audio_codebook,
     index_audio_corpus,
@@ -13,8 +10,6 @@ from src.engine.audio_pipeline import (
 )
 
 
-# 3 "clases" de audio: tonos senoidales a frecuencias distintas.
-# Duracion corta para que la KClustering pure-Python termine rapido.
 SR = 22050
 DURATION_S = 1.0
 
@@ -44,6 +39,7 @@ def _all_paths(by_class: dict[str, list[str]]) -> list[str]:
 
 
 def test_build_audio_codebook_returns_centroids() -> None:
+    np.random.seed(0)
     with tempfile.TemporaryDirectory() as tmp:
         by_class = _make_corpus(Path(tmp))
         centroids = build_audio_codebook(_all_paths(by_class), codebook_size=6)
@@ -53,6 +49,7 @@ def test_build_audio_codebook_returns_centroids() -> None:
 
 
 def test_index_audio_corpus_builds_indexable_corpus() -> None:
+    np.random.seed(0)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         by_class = _make_corpus(tmp)
@@ -70,6 +67,7 @@ def test_index_audio_corpus_builds_indexable_corpus() -> None:
 
 
 def test_prepare_audio_query_returns_histogram() -> None:
+    np.random.seed(0)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         by_class = _make_corpus(tmp)
@@ -89,6 +87,7 @@ def test_prepare_audio_query_returns_histogram() -> None:
 
 
 def test_query_returns_same_file_in_top_results() -> None:
+    np.random.seed(0)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         by_class = _make_corpus(tmp)
