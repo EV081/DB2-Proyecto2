@@ -21,7 +21,7 @@ SPIMI se implementa desde cero (`src/engine/inverted_index.py`). GIN, GiST y `pg
 
 ![arquitectura-global](img/arq-glob.png)
 
-> Nota: los índices en el flujo del ETL son los archivos locales, los de Zona de consulta son los mismos pero cargados a RAM
+> Nota: los indices en el flujo del etl, son los archivos locales, los de Zona de consulta son los mismos pero cargados a ram
 
 ### 1.3 Decisiones que vale la pena mencionar
 
@@ -29,7 +29,7 @@ SPIMI se implementa desde cero (`src/engine/inverted_index.py`). GIN, GiST y `pg
 
 **Cada documento vive en una sola fila.** La misma tabla `songs` (o `products`) guarda: el histograma como JSONB (para auditoría), el vector denso como `vector(k)` para `pgvector`, y una columna `tsvector` generada por Postgres para GIN/GiST. SPIMI usa el mismo histograma pero lo materializa como archivos binarios en `indexes/`.
 
-**El router del backend evita SQL desde el cliente.** El cliente elige `(motor, modalidad)`, no una query SQL. Todas las rutas devuelven el mismo formato: un `dict` con metadatos (`app`, `modality`, `engine`, `query`, `k`, `latency_ms`) y un array `results` donde cada entrada tiene `id`, `score`, `engine`, `latency_ms` y campos de display. Esto hace directa la comparación en el frontend.
+**El router del backend evita SQL desde el cliente.** El cliente elige `(motor, modalidad)`, no una query SQL. Todas las rutas devuelven el mismo `dict` (`id`, `score`, `engine`, `latency_ms`, campos de display), lo cual hace directa la comparación en el frontend.
 
 **El codebook se entrena una sola vez por modalidad.** SPIMI y `pgvector` ven exactamente los mismos histogramas — cualquier diferencia de resultados viene del motor, no del feature.
 
@@ -43,14 +43,14 @@ SPIMI se implementa desde cero (`src/engine/inverted_index.py`). GIN, GiST y `pg
 
 | Aplicación | Modalidades | Dataset | Volumen | Autenticación |
 |---|---|---|---|---|
-| **App 2 · Búsqueda Musical Inteligente** | Texto (letras) + Audio (waveform) | Spotify Songs Lyrics (Kaggle `imuhammad/audio-features-and-lyrics-of-spotify-songs`) + FMA-small (Free Music Archive) | ~40 000 canciones con letras EN + 8 000 pistas MP3 | Kaggle token + HTTPS directo |
+| **App 2 · Búsqueda Musical Inteligente** | Texto (letras) + Audio (waveform) | Spotify Songs Lyrics (Kaggle `imuhammad/audio-features-and-lyrics-of-spotify-songs`) + FMA-large (Free Music Archive, `fma_large.zip` ~93 GB, recortado a 40k con `FMA_LIMIT=40000`) | ~40 000 canciones con letras EN + 40 000 pistas MP3 | Kaggle token + HTTPS directo |
 | **App 4 · Recomendación Multimodal (Fashion)** | Texto (descripciones) + Imagen (JPG) | Fashion Product Images (Kaggle `paramaggarwal/fashion-product-images-dataset`) | ~44 000 productos con imagen + descripción estructurada | Kaggle token |
 
 ### 2.2 Preprocesamiento y filtros
 
 **Letras (Spotify).** Se descartan las que no están en inglés usando el campo `language` que trae el CSV de Kaggle. La razón es sencilla: el pipeline de texto usa las stopwords y el Porter stemmer de NLTK, que están entrenados en inglés. Meterle español o portugués deja stopwords sin filtrar y stems basura, lo cual arruina IDF.
 
-**Metadatos de FMA.** El download baja también `fma_metadata.zip`, lee `tracks.csv` con pandas (índice multi-header) y escribe `data/fma_small_flat/metadata.csv` en formato `stem,title,artist,genre`. El ETL de música lo consume junto con la ruta del audio para que los resultados en la API traigan título y artista reales en lugar del número de track.
+**Metadatos de FMA.** El download baja también `fma_metadata.zip`, lee `tracks.csv` con pandas (índice multi-header) y escribe `data/fma_large_flat/metadata.csv` en formato `stem,title,artist,genre`. El ETL de música lo consume junto con la ruta del audio para que los resultados en la API traigan título y artista reales en lugar del número de track.
 
 **Fashion.** El descriptor de cada producto se compone en `download_fashion.py` uniendo `productDisplayName + gender + masterCategory + subCategory + articleType + baseColour + usage + season` separados por punto. No incluye las etiquetas ("`Gender:`", "`Color:`"), porque terminan en todas las filas y IDF las anula — indexarlas era desperdiciar espacio del top-1000.
 
@@ -61,8 +61,8 @@ SPIMI se implementa desde cero (`src/engine/inverted_index.py`). GIN, GiST y `pg
 | Modalidad | Descriptor | Dimensión por unidad | Unidades por documento (típico) |
 |---|---|---|---|
 | Texto | Stem (Porter) | 1 token | 30–500 tokens |
-| Audio | MFCC (`librosa`, `n_mfcc=13`, ventana 200 ms, hop 100 ms) | 13 | ~300 frames (30 s de pista) |
-| Imagen | SIFT (`cv2.SIFT_create`), ventana 32x32 px, hop 16px | 128 | 200–2 000 keypoints |
+| Audio | MFCC (`librosa`, `n_mfcc=13`, ventana 200 ms, hop 100 ms, sr=16 kHz) [6] | 13 | ~300 frames (30 s de pista) |
+| Imagen | SIFT (`cv2.SIFT_create`) [4] | 128 | 200–2 000 keypoints |
 
 ---
 
@@ -80,7 +80,7 @@ SPIMI se implementa desde cero (`src/engine/inverted_index.py`). GIN, GiST y `pg
 
 ![audio-flow](img/audio-flow.png)
 
-### Indexación de imágenes
+### Indexación de imagenes
 
 ![imagen-flow](img/imagen-flow.png)
 
@@ -111,17 +111,13 @@ mfcc = librosa.feature.mfcc(y, sr, n_mfcc=13, n_fft=n_fft, hop_length=hop_length
 return mfcc.T   # shape (T, 13), con T ≈ 300 en pistas de 30 s
 ```
 
-**`image_sift.py`.** La imagen se divide en parches densos (`split_image`, ventana 32×32 px, stride 16) y SIFT se aplica sobre cada parche:
+**`image_sift.py`.**
 
 ```
-parches = split_image(archivo, patch_size=32, stride=16)
+img = cv2.imread(archivo, cv2.IMREAD_GRAYSCALE)
 detector = cv2.SIFT_create()
-descriptores = []
-para parche en parches:
-    gray = cv2.cvtColor(parche, cv2.COLOR_BGR2GRAY)
-    _, desc = detector.detectAndCompute(gray, None)
-    si desc is not None: descriptores.append(desc)
-return np.vstack(descriptores)   # shape (N_keypoints, 128), típicamente 200 – 2000
+_, desc = detector.detectAndCompute(img, None)
+return desc     # shape (N_keypoints, 128), típicamente 200 – 2000 keypoints
 ```
 
 **`feature_cache.py`.** Cada extracción se persiste como `<stem>.npy`. La extracción es cara (MFCC ~200 ms, SIFT ~50 ms por archivo × decenas de miles). El caché evita repetir el trabajo cuando se cambia solo el codebook.
@@ -193,7 +189,7 @@ para cada descriptor local x del documento:
 serializar histograma como { "a_0037": 12, "a_0102": 4, ... }   # texto → JSONB
 ```
 
-El histograma resultante es la representación del documento en el "vocabulario". Los prefijos `a_`, `v_` (audio, visual) evitan colisiones cuando SPIMI indexa las tres modalidades en la misma estructura.
+El histograma resultante es la representación del documento en el "vocabulario". Los prefijos `a_`, `v_`, `t_` (audio, visual, texto) evitan colisiones cuando SPIMI indexa las tres modalidades en la misma estructura.
 
 ### 3.3 Motor propio SPIMI (`src/engine/inverted_index.py`)
 
@@ -316,8 +312,6 @@ CREATE INDEX idx_products_image_emb_hnsw
 ```
 
 **Por qué pgvector NO aparece en las modalidades de texto.** El enunciado lo asigna explícitamente a imagen y audio ("GIN/GiST para texto, pgvector para imágenes y audio"). Además HNSW asume vectores densos y semánticos (embeddings CNN/BERT), no vectores TF-IDF dispersos donde >90% de los componentes son cero. Aplicarlo a texto TF-IDF funcionaría a nivel de código pero no es el uso para el cual HNSW fue diseñado.
-
-**Nota:** `models.py`/`native_search.py` migraron al esquema `songs`/`products`; `routes_music.py`/`routes_fashion.py` todavía referencian el esquema anterior y necesitan un PR de seguimiento para alinearse.
 
 ### 3.5 Ejecución de consultas (`src/engine/similarity.py`, `src/db/native_search.py`)
 
