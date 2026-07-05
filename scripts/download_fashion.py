@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 import argparse
 import csv
 import os
 import sys
 from pathlib import Path
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
