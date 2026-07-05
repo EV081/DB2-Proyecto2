@@ -2,11 +2,9 @@ import os
 import re
 import string
 from typing import Dict, List
-
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
-
 from .split import split_text
 
 _ENG_STOPWORDS = None
