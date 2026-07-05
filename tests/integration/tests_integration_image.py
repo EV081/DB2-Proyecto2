@@ -1,11 +1,8 @@
 from __future__ import annotations
-
 import tempfile
 from pathlib import Path
-
 import cv2
 import numpy as np
-
 from src.engine.image_pipeline import (
     build_image_codebook,
     index_image_corpus,
@@ -13,8 +10,6 @@ from src.engine.image_pipeline import (
 )
 
 
-# Generamos 3 "clases" de imagenes sinteticas con patrones SIFT-detectables
-# (la KClustering pure-Python es lenta, asi que mantenemos N chico y vocab=8).
 SIZE = 64
 PATCH = 32
 STRIDE = 16
@@ -60,6 +55,7 @@ def _all_paths(by_class: dict[str, list[str]]) -> list[str]:
 
 
 def test_build_image_codebook_returns_centroids() -> None:
+    np.random.seed(0)
     with tempfile.TemporaryDirectory() as tmp:
         by_class = _make_corpus(Path(tmp))
         centroids = build_image_codebook(_all_paths(by_class), codebook_size=8)
@@ -69,6 +65,7 @@ def test_build_image_codebook_returns_centroids() -> None:
 
 
 def test_index_image_corpus_builds_indexable_corpus() -> None:
+    np.random.seed(0)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         by_class = _make_corpus(tmp)
@@ -86,6 +83,7 @@ def test_index_image_corpus_builds_indexable_corpus() -> None:
 
 
 def test_prepare_image_query_returns_histogram() -> None:
+    np.random.seed(0)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         by_class = _make_corpus(tmp)
@@ -104,9 +102,9 @@ def test_prepare_image_query_returns_histogram() -> None:
 
 
 def test_query_returns_results_for_indexed_image() -> None:
-    # No exigimos top-1 perfecto (K-Means con seed aleatoria + corpus chico
-    # es ruidoso); solo verificamos que la query devuelve algo y que el
-    # archivo consultado esta en el top-K.
+    # Seed fija para que K-Means sea reproducible independiente del orden
+    # de tests (KClustering.reset_centroids usa np.random global).
+    np.random.seed(0)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         by_class = _make_corpus(tmp)
