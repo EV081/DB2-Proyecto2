@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import argparse
 import json
 import random
@@ -6,8 +7,11 @@ import statistics
 import sys
 import time
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from sqlalchemy import text
+
 from src.api.search_service import (
     clear_caches,
     search_fashion_desc,
@@ -61,7 +65,9 @@ def _spimi_dir_bytes(path: Path) -> int:
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
 
 
+# ----------------------------------------------------------------------------
 # Helpers
+# ----------------------------------------------------------------------------
 def _percentile(values: list[float], p: float) -> float:
     if not values:
         return 0.0
@@ -87,7 +93,9 @@ def _summarize(latencies: list[float], successes: int) -> dict:
     }
 
 
+# ----------------------------------------------------------------------------
 # Sampling
+# ----------------------------------------------------------------------------
 def _sample_lyrics(n: int, seed: int) -> list[str]:
     with get_session() as session:
         rows = session.execute(text(
@@ -154,7 +162,9 @@ def _sample_image_paths(n: int, seed: int) -> list[Path]:
     return [rng.choice(paths) for _ in range(n)]
 
 
+# ----------------------------------------------------------------------------
 # Runner por (app, modalidad)
+# ----------------------------------------------------------------------------
 _ENGINE_TO_INDEX_TARGET: dict[tuple[str, str], tuple[str, str | Path]] = {
     # (section, engine) -> (kind, target)
     ("music_lyrics",  "spimi"):    ("path", Path("indexes/music/text/final")),
@@ -181,6 +191,7 @@ def _index_size_mb(section: str, engine: str) -> float | None:
 
 
 def _spimi_io_counters(section: str) -> dict[str, int] | None:
+    """Lee los contadores io_seeks / io_read_bytes del InvertedIndex cacheado."""
     from src.api.search_service import _SPIMI_CACHE
     app, modality = section.split("_", 1)
     modality = "text" if modality in ("lyrics", "desc") else modality
