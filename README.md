@@ -317,6 +317,8 @@ CREATE INDEX idx_products_image_emb_hnsw
 
 **Por qué pgvector NO aparece en las modalidades de texto.** El enunciado lo asigna explícitamente a imagen y audio ("GIN/GiST para texto, pgvector para imágenes y audio"). Además HNSW asume vectores densos y semánticos (embeddings CNN/BERT), no vectores TF-IDF dispersos donde >90% de los componentes son cero. Aplicarlo a texto TF-IDF funcionaría a nivel de código pero no es el uso para el cual HNSW fue diseñado.
 
+**Nota:** `models.py`/`native_search.py` migraron al esquema `songs`/`products`; `routes_music.py`/`routes_fashion.py` todavía referencian el esquema anterior y necesitan un PR de seguimiento para alinearse.
+
 ### 3.5 Ejecución de consultas (`src/engine/similarity.py`, `src/db/native_search.py`)
 
 **Consulta por texto (SPIMI).** Ya cubierta en 3.3 fase 3: `search_topk` toma la query, arma `tf_qt`, para cada término abre la posting list y acumula scores.
