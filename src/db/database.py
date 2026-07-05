@@ -2,7 +2,6 @@ import os
 from contextlib import contextmanager
 from urllib.parse import quote_plus
 from typing import Any
-
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -43,7 +42,6 @@ def get_session():
 
 
 def check_database_connection() -> dict[str, Any]:
-    """Return a simple PostgreSQL and pgvector availability status."""
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
