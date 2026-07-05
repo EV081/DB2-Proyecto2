@@ -16,13 +16,22 @@ def split_text(text: str, min_paragraph_chars: int = 20) -> List[str]:
 # Imagen — dividir en patches superpuestos
 # ===========================================================================
 # usar 32x32 y stride de 16 pixeles, las imagenes de los datasets son pequeñas
-def split_image(image_path: str, patch_size: int = 32, stride: int = 16):
+def split_image(image_path: str, patch_size: int = 32, stride: int = 16, max_dim: int = 400):
     import cv2
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Imagen no encontrada: {image_path}")
     img = cv2.imread(image_path, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError(f"No se pudo leer la imagen: {image_path}")
+
+    # Redimensionamos la imagen si es demasiado grande para evitar memoria excesiva
+    h0, w0 = img.shape[:2]
+    if max_dim and max(h0, w0) > max_dim:
+        scale = max_dim / max(h0, w0)
+        img = cv2.resize(
+            img, (int(w0 * scale), int(h0 * scale)),
+            interpolation=cv2.INTER_AREA,
+        )
 
     h, w = img.shape[:2]
     patches = []
