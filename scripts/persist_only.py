@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import argparse
 import csv
 import json
@@ -6,8 +7,11 @@ import sys
 import time
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import numpy as np
+
 from src.db.storage import (
     ensure_emb_column,
     hist_to_dense,
