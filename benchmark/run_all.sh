@@ -1,10 +1,26 @@
 #!/usr/bin/env bash
-# benchmark/run_all.sh
-# Ejecuta el protocolo oficial Fashion 40K para comparar codebooks visuales.
-# Varía solo --codebook-image: 128, 512 y 1024.
-# Mantiene constantes: dataset 40K, manifest, seed=42, codebook-text=1000,
-# max-image-samples=50000 y quality_ks=10,512,1024.
-# Este script ejecuta ETL con --reset y luego benchmark completo.
+# benchmark/run_all.sh — Reindexa el corpus a distintos tamanos N y
+# corre bench_full + compute_recall + plots por cada uno.
+#
+# Estrategia (opcion C, sin tocar el ETL):
+#   1. Se crean subdirs con symlinks a los primeros N archivos.
+#   2. Se pasan esos subdirs al ETL de siempre.
+#   3. Entre corridas se preserva el feature cache (_features/) — la
+#      extraccion SIFT/MFCC es lo caro y no cambia con N.
+#
+# Uso:
+#   bash benchmark/run_all.sh                 # defaults: 10k/20k/30k/40k
+#   bash benchmark/run_all.sh --sizes 5000,10000
+#   bash benchmark/run_all.sh --queries 200 --k 20
+#   bash benchmark/run_all.sh --only-plot     # solo re-genera plots
+#
+# Salidas:
+#   benchmark/results/bench_<N>.json
+#   benchmark/results/recall_<N>.json
+#   benchmark/graphs/scale_*.png
+#
+# Tiempo estimado por N: ~30-60 min (dominado por K-Means de imagen).
+# Total con 4 sizes: ~2-4 horas.
 
 set -euo pipefail
 
@@ -36,6 +52,7 @@ TMP_DIR="$BENCH_DIR/tmp"
 
 mkdir -p "$RESULTS_DIR" "$GRAPHS_DIR" "$TMP_DIR"
 
+# Origen de los archivos (produccion). Ajusta si tu paths difieren.
 LYRICS_POOL="data/spotify/lyrics"
 AUDIO_POOL="data/fma_large_flat"
 IMAGES_POOL="data/fashion/images"
@@ -69,7 +86,7 @@ _symlink_subset() {
     echo "  [ok] $tgt: $got archivos"
 }
 
-
+# Simetria en fashion: images y descs deben usar los MISMOS stems.
 _symlink_fashion_pairs() {
     local n="$1"
     local imgs_tgt="$TMP_DIR/fashion_images_${n}"
@@ -77,6 +94,7 @@ _symlink_fashion_pairs() {
     rm -rf "$imgs_tgt" "$descs_tgt"
     mkdir -p "$imgs_tgt" "$descs_tgt"
 
+    # Interseccion de stems
     python3 - "$IMAGES_POOL" "$DESCS_POOL" "$imgs_tgt" "$descs_tgt" "$n" <<'PY'
 import os, sys
 from pathlib import Path
@@ -114,7 +132,7 @@ _truncate_db() {
 }
 
 # ---------------------------------------------------------------------------
-# Corrida de un tamanio
+# Corrida de UN tamano
 # ---------------------------------------------------------------------------
 run_size() {
     local N="$1"
@@ -123,16 +141,18 @@ run_size() {
     echo "  N = $N"
     echo "===================================================="
 
+    # 1. Symlinks
     echo "[1/5] Symlinks para subset de $N archivos"
     _symlink_subset "$LYRICS_POOL" "$TMP_DIR/lyrics_${N}" "$N" "*.txt"
     _symlink_subset "$AUDIO_POOL"  "$TMP_DIR/audio_${N}"  "$N" "*.mp3"
     _symlink_fashion_pairs "$N"
 
-   
+    # 2. Wipe DB + indexes (preservar features)
     echo "[2/5] Wipe DB + SPIMI (features preservados)"
     _truncate_db
     _wipe_indexes_keep_features
 
+    # 3. ETL music
     echo "[3/5] ETL music"
     META_ARGS=()
     [[ -f "$SPOTIFY_META" ]] && META_ARGS+=(--metadata-csv "$SPOTIFY_META")
@@ -147,6 +167,7 @@ run_size() {
         --app-name music \
         --reset
 
+    # 4. ETL fashion
     echo "[4/5] ETL fashion"
     FASHION_META_ARG=()
     [[ -f "$FASHION_META" ]] && FASHION_META_ARG=(--metadata-csv "$FASHION_META")
@@ -161,6 +182,7 @@ run_size() {
         --app-name fashion \
         --reset
 
+    # 5. Bench + recall
     echo "[5/5] Bench + recall"
     python3 scripts/bench_full.py \
         --queries "$QUERIES" --k "$K" \
@@ -174,7 +196,7 @@ run_size() {
 }
 
 # ---------------------------------------------------------------------------
-# Loop principal
+# Loop principal (solo si no es --only-plot)
 # ---------------------------------------------------------------------------
 if [[ $ONLY_PLOT -eq 0 ]]; then
     for N in "${SIZE_LIST[@]}"; do
