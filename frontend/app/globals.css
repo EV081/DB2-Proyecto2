@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --surface: #f4f4f5;
+  --surface-2: #e4e4e7;
+  --border: #d4d4d8;
+  --muted: #6b6b70;
+  --engine-spimi: #b8720a;
+  --engine-gin: #3b82f6;
+  --engine-gist: #d946ef;
+  --engine-pgvector: #22c55e;
+  --success: #16a34a;
+  --error: #dc2626;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-engine-spimi: var(--engine-spimi);
+  --color-engine-gin: var(--engine-gin);
+  --color-engine-gist: var(--engine-gist);
+  --color-engine-pgvector: var(--engine-pgvector);
+  --color-success: var(--success);
+  --color-error: var(--error);
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-plex-mono);
+  --font-display: "Cabinet Grotesk", var(--font-jakarta), sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --surface: #141416;
+    --surface-2: #1f1f23;
+    --border: #2a2a2e;
+    --muted: #9a9aa2;
+    --engine-spimi: #f5a623;
+    --success: #22c55e;
+    --error: #f87171;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+.scanlines {
+  position: relative;
+}
+
+.scanlines::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    0deg,
+    color-mix(in srgb, var(--foreground) 4%, transparent) 0px,
+    color-mix(in srgb, var(--foreground) 4%, transparent) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+@keyframes count-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.count-up {
+  animation: count-up-fade 300ms ease-out;
+}
+
+.k-slider {
+  height: 20px;
+  cursor: pointer;
+}
+
+.k-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+
+.k-slider::-moz-range-track {
+  height: 6px;
+  background: transparent;
+}
+
+.k-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--engine-spimi);
+  border: 3px solid var(--background);
+  box-shadow: 0 0 0 1px var(--engine-spimi);
+  cursor: pointer;
+}
+
+.k-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--engine-spimi);
+  border: 3px solid var(--background);
+  box-shadow: 0 0 0 1px var(--engine-spimi);
+  cursor: pointer;
+}
