@@ -1,12 +1,16 @@
 from __future__ import annotations
+
 import argparse
 import json
 import random
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from sqlalchemy import text
-from src.api.search_services import (
+
+from src.api.search_service import (
     clear_caches,
     search_fashion_desc,
     search_fashion_image,
@@ -16,7 +20,9 @@ from src.api.search_services import (
 from src.db.database import get_session
 
 
+# ----------------------------------------------------------------------------
 # Carga de ground truth desde DB
+# ----------------------------------------------------------------------------
 def _load_song_labels(label_col: str) -> dict[str, str]:
     with get_session() as session:
         rows = session.execute(text(
@@ -40,7 +46,9 @@ def _label_counts(labels: dict[str, str]) -> dict[str, int]:
     return counts
 
 
+# ----------------------------------------------------------------------------
 # Recall@K
+# ----------------------------------------------------------------------------
 def _metrics_at_k_for_query(
     query_id: str,
     query_label: str,
@@ -130,7 +138,9 @@ def _eval_engine_file(
     return _aggregate(pairs)
 
 
+# ----------------------------------------------------------------------------
 # Sampling de queries del DB
+# ----------------------------------------------------------------------------
 def _short_query(text_full: str, max_words: int = 6) -> str:
     words = text_full.split()
     return " ".join(words[:max_words])
@@ -202,6 +212,9 @@ def _sample_product_image_queries(n: int, label_col: str, seed: int):
     return queries, labels, counts
 
 
+# ----------------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(description="Recall@K Fase 4")
     parser.add_argument("--queries", type=int, default=50)

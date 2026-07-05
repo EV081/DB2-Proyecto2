@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import argparse
 import hashlib
 import os
@@ -80,8 +81,11 @@ def _emit_flat_metadata_csv(tracks_csv: Path, out_csv: Path) -> int:
     return len(out_df)
 
 
-def _selective_extract(zip_path: Path, out_dir: Path, extract_root: Path, limit: int | None) -> int:
-
+def _selective_extract(zip_path: Path, out_dir: Path, extract_root: Path,
+                       limit: int | None) -> int:
+    """Extrae mp3s del zip. Si limit es None, extrae todos; sino corta a los
+    primeros `limit` mp3s en orden alfabetico. Devuelve la cantidad extraida.
+    """
     extract_root.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_path) as zf:
         mp3s = sorted(n for n in zf.namelist() if n.endswith(".mp3"))
