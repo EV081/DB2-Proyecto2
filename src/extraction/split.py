@@ -42,7 +42,7 @@ def split_image(image_path: str, patch_size: int = 32, stride: int = 16, max_dim
     return patches
 
 
-# Audio — dividir en ventanas
+# Audio — dividir en ventanas 
 def split_audio(audio_path: str, window_ms: int = 100, hop_ms: int = 100,
                 target_sr: int = 16000):
     import librosa
