@@ -50,13 +50,13 @@ def split_image(image_path: str, patch_size: int = 32, stride: int = 16, max_dim
 # ===========================================================================
 # Audio — dividir en ventanas deslizantes
 # ===========================================================================
-def split_audio(audio_path: str, window_ms: int = 100, hop_ms: int = 50):
+def split_audio(audio_path: str, window_ms: int = 100, hop_ms: int = 100,
+                target_sr: int = 16000):
     import librosa
     import numpy as np
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio no encontrado: {audio_path}")
-
-    y, sr = librosa.load(audio_path, sr=None, mono=True)
+    y, sr = librosa.load(audio_path, sr=target_sr, mono=True)
     window_len = int(sr * window_ms / 1000)
     hop_len = int(sr * hop_ms / 1000)
 
