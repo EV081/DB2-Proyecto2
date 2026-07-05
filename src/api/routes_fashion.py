@@ -10,24 +10,24 @@ from fastapi.responses import FileResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 
-from src.api.search_service import search_music_audio, search_music_lyrics
+from src.api.search_service import search_fashion_desc, search_fashion_image
 from src.db.database import get_session
-from src.db.models import Song
+from src.db.models import Product
 
-router = APIRouter(prefix="/api/music", tags=["music"])
+router = APIRouter(prefix="/api/fashion", tags=["fashion"])
 
-LyricsEngine = Literal["spimi", "gin", "gist"]
-AudioEngine = Literal["spimi", "pgvector"]
+DescEngine = Literal["spimi", "gin", "gist"]
+ImageEngine = Literal["spimi", "pgvector"]
 
 
-@router.get("/search/lyrics")
-def search_by_lyrics(
+@router.get("/search/description")
+def search_by_description(
     q: str = Query(..., description="Texto de busqueda"),
-    engine: LyricsEngine = Query("spimi"),
+    engine: DescEngine = Query("spimi"),
     k: int = Query(10, ge=1, le=100),
 ):
     try:
-        return search_music_lyrics(query_text=q, engine=engine, k=k)
+        return search_fashion_desc(query_text=q, engine=engine, k=k)
     except LookupError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except SQLAlchemyError as e:
@@ -36,18 +36,18 @@ def search_by_lyrics(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/search/audio")
-async def search_by_audio(
+@router.post("/search/image")
+async def search_by_image(
     file: UploadFile = File(...),
-    engine: AudioEngine = Query("spimi"),
+    engine: ImageEngine = Query("spimi"),
     k: int = Query(10, ge=1, le=100),
 ):
-    suffix = Path(file.filename or "query.mp3").suffix or ".mp3"
+    suffix = Path(file.filename or "query.jpg").suffix or ".jpg"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = Path(tmp.name)
     try:
-        return search_music_audio(audio_path=tmp_path, engine=engine, k=k)
+        return search_fashion_image(image_path=tmp_path, engine=engine, k=k)
     except LookupError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except SQLAlchemyError as e:
@@ -59,17 +59,17 @@ async def search_by_audio(
 
 
 @router.get("/media/{item_id}")
-def get_music_media(item_id: str):
+def get_fashion_media(item_id: str):
     with get_session() as session:
-        song = None
+        product = None
         if item_id.isdigit():
-            song = session.get(Song, int(item_id))
-        if song is None:
-            stmt = select(Song).where(Song.audio_path.ilike(f"%{item_id}.%"))
-            song = session.exec(stmt).first()
-        if song is None or not song.audio_path:
-            raise HTTPException(status_code=404, detail="Cancion o audio no encontrado")
-        audio_path = Path(song.audio_path)
-        if not audio_path.exists():
+            product = session.get(Product, int(item_id))
+        if product is None:
+            stmt = select(Product).where(Product.image_path.ilike(f"%{item_id}.%"))
+            product = session.exec(stmt).first()
+        if product is None or not product.image_path:
+            raise HTTPException(status_code=404, detail="Producto o imagen no encontrada")
+        image_path = Path(product.image_path)
+        if not image_path.exists():
             raise HTTPException(status_code=404, detail="Archivo no encontrado en disco")
-        return FileResponse(audio_path)
+        return FileResponse(image_path)
