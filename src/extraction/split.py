@@ -2,9 +2,7 @@ import os
 from typing import List
 
 
-# ===========================================================================
 # Texto — dividir en párrafos
-# ===========================================================================
 def split_text(text: str, min_paragraph_chars: int = 20) -> List[str]:
     paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
     if not paragraphs:
@@ -12,10 +10,7 @@ def split_text(text: str, min_paragraph_chars: int = 20) -> List[str]:
     return [p for p in paragraphs if len(p) >= min_paragraph_chars] or paragraphs[:1]
 
 
-# ===========================================================================
-# Imagen — dividir en patches superpuestos
-# ===========================================================================
-# usar 32x32 y stride de 16 pixeles, las imagenes de los datasets son pequeñas
+# Imagen
 def split_image(image_path: str, patch_size: int = 32, stride: int = 16, max_dim: int = 400):
     import cv2
     if not os.path.exists(image_path):
@@ -47,9 +42,7 @@ def split_image(image_path: str, patch_size: int = 32, stride: int = 16, max_dim
     return patches
 
 
-# ===========================================================================
-# Audio — dividir en ventanas deslizantes
-# ===========================================================================
+# Audio — dividir en ventanas
 def split_audio(audio_path: str, window_ms: int = 100, hop_ms: int = 100,
                 target_sr: int = 16000):
     import librosa
