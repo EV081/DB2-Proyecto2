@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 from pathlib import Path
 from typing import Iterable, Iterator
-
 from src.engine.inverted_index import (
     InvertedIndex,
     build_meta,
@@ -16,11 +14,11 @@ from src.extraction.text_tfidf import (
     stem,
     tokenize,
 )
-from src.ml.text_topk import TokKWords
+from src.ml.text_topk import TopKWords
 
 
 def build_text_codebook(file_paths: Iterable[str | Path], codebook_size: int) -> set[str]:
-    tk = TokKWords(top_k=codebook_size)
+    tk = TopKWords(top_k=codebook_size)
     for fp in file_paths:
         chunks_tf = extract_tfidf_features(str(fp))
         for tf in chunks_tf:
