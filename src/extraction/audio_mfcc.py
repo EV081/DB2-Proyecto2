@@ -1,18 +1,27 @@
 import os
-
 import librosa
 import numpy as np
-
-from .split import split_audio
+import soundfile as sf
 
 VALID_EXTENSIONS = ('.wav', '.mp3', '.flac', '.m4a', '.ogg')
+
+
+def _load_audio(audio_path: str, target_sr: int) -> tuple[np.ndarray, int]:
+    y, sr = sf.read(audio_path, dtype='float32', always_2d=False)
+    if y.ndim > 1:
+        y = y.mean(axis=1)
+    if sr != target_sr:
+        y = librosa.resample(y, orig_sr=sr, target_sr=target_sr, res_type='soxr_qq')
+        sr = target_sr
+    return y, sr
 
 
 def extract_mfcc_features(
     audio_path: str,
     n_mfcc: int = 13,
-    window_ms: int = 100,
-    hop_ms: int = 50,
+    window_ms: int = 200,
+    hop_ms: int = 100,
+    target_sr: int = 16000,
 ) -> np.ndarray:
     ext = os.path.splitext(audio_path)[1].lower()
     if ext not in VALID_EXTENSIONS:
@@ -20,21 +29,21 @@ def extract_mfcc_features(
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio no encontrado: {audio_path}")
 
-    frames = split_audio(audio_path, window_ms=window_ms, hop_ms=hop_ms)
-    sr = librosa.get_samplerate(audio_path)
+    y, sr = _load_audio(audio_path, target_sr)
+    n_fft = int(sr * window_ms / 1000)
     hop_length = int(sr * hop_ms / 1000)
 
-    all_mfcc = []
-    for frame in frames:
-        mfcc = librosa.feature.mfcc(
-            y=frame, sr=sr,
-            n_mfcc=n_mfcc,
-            n_fft=len(frame),
-            hop_length=hop_length,
-        )
-        all_mfcc.append(mfcc.T)
+    if len(y) < n_fft:
+        y = np.pad(y, (0, n_fft - len(y)))
 
-    return np.vstack(all_mfcc).astype(np.float32) if all_mfcc else np.empty((0, n_mfcc), dtype=np.float32)
+    mfcc = librosa.feature.mfcc(
+        y=y, sr=sr,
+        n_mfcc=n_mfcc,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        center=False,
+    )
+    return mfcc.T.astype(np.float32)
 
 
 __all__ = [
