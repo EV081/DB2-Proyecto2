@@ -1,0 +1,129 @@
+{
+  "n_queries": 100,
+  "k": 10,
+  "seed": 42,
+  "corpus_size": {
+    "music_lyrics": 10000,
+    "music_audio": 10000,
+    "fashion_desc": 10000,
+    "fashion_image": 10000
+  },
+  "music_lyrics": {
+    "spimi": {
+      "avg_ms": 20.1696,
+      "p50_ms": 18.946,
+      "p95_ms": 24.7689,
+      "throughput_qps": 49.58,
+      "queries_with_results": 84,
+      "n": 100,
+      "rss_delta_mb": 9.56,
+      "rss_peak_mb": 287.7,
+      "index_size_mb": 34.68
+    },
+    "gin": {
+      "avg_ms": 3.1797,
+      "p50_ms": 2.1803,
+      "p95_ms": 7.0811,
+      "throughput_qps": 314.5,
+      "queries_with_results": 93,
+      "n": 100,
+      "rss_delta_mb": 0.0,
+      "rss_peak_mb": 287.7,
+      "index_size_mb": 7.16
+    },
+    "gist": {
+      "avg_ms": 3.0528,
+      "p50_ms": 2.1748,
+      "p95_ms": 6.7278,
+      "throughput_qps": 327.57,
+      "queries_with_results": 93,
+      "n": 100,
+      "rss_delta_mb": 0.0,
+      "rss_peak_mb": 287.7,
+      "index_size_mb": 3.23
+    }
+  },
+  "music_audio": {
+    "spimi": {
+      "avg_ms": 138.0327,
+      "p50_ms": 129.2496,
+      "p95_ms": 192.3707,
+      "throughput_qps": 7.24,
+      "queries_with_results": 100,
+      "n": 100,
+      "rss_delta_mb": 131.41,
+      "rss_peak_mb": 420.89,
+      "index_size_mb": 6.93
+    },
+    "pgvector": {
+      "avg_ms": 78.5764,
+      "p50_ms": 82.8689,
+      "p95_ms": 87.8969,
+      "throughput_qps": 12.73,
+      "queries_with_results": 100,
+      "n": 100,
+      "rss_delta_mb": 0.01,
+      "rss_peak_mb": 420.9,
+      "index_size_mb": 25.7
+    }
+  },
+  "fashion_desc": {
+    "spimi": {
+      "avg_ms": 19.5901,
+      "p50_ms": 18.2149,
+      "p95_ms": 23.4214,
+      "throughput_qps": 51.05,
+      "queries_with_results": 100,
+      "n": 100,
+      "rss_delta_mb": 0.8,
+      "rss_peak_mb": 423.16,
+      "index_size_mb": 2.52
+    },
+    "gin": {
+      "avg_ms": 1.8488,
+      "p50_ms": 1.6441,
+      "p95_ms": 3.6124,
+      "throughput_qps": 540.89,
+      "queries_with_results": 100,
+      "n": 100,
+      "rss_delta_mb": 0.0,
+      "rss_peak_mb": 423.16,
+      "index_size_mb": 1.67
+    },
+    "gist": {
+      "avg_ms": 1.8985,
+      "p50_ms": 1.6903,
+      "p95_ms": 3.7531,
+      "throughput_qps": 526.72,
+      "queries_with_results": 100,
+      "n": 100,
+      "rss_delta_mb": 0.0,
+      "rss_peak_mb": 423.16,
+      "index_size_mb": 0.76
+    }
+  },
+  "fashion_image": {
+    "spimi": {
+      "avg_ms": 597.9943,
+      "p50_ms": 601.86,
+      "p95_ms": 866.2607,
+      "throughput_qps": 1.67,
+      "queries_with_results": 100,
+      "n": 100,
+      "rss_delta_mb": 35.43,
+      "rss_peak_mb": 550.34,
+      "index_size_mb": 25.07
+    },
+    "pgvector": {
+      "avg_ms": 178.8093,
+      "p50_ms": 178.3411,
+      "p95_ms": 236.2839,
+      "throughput_qps": 5.59,
+      "queries_with_results": 100,
+      "n": 100,
+      "rss_delta_mb": 3.39,
+      "rss_peak_mb": 550.34,
+      "index_size_mb": 77.18
+    }
+  }
+}
