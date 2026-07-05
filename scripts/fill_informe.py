@@ -1,11 +1,15 @@
 from __future__ import annotations
+
 import argparse
 import json
 import re
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from sqlalchemy import text
+
 from src.db.database import get_session
 
 
@@ -34,6 +38,7 @@ def _corpus_size(section: str) -> int:
 
 
 def _closest_size_row(size_actual: int, sizes_en_tabla: list[int]) -> int:
+    """Devuelve el N de la tabla mas cercano a size_actual (para elegir que fila rellenar)."""
     return min(sizes_en_tabla, key=lambda n: abs(n - size_actual))
 
 
@@ -45,7 +50,10 @@ def _fmt(value) -> str:
     return str(value)
 
 
-def _replace_row(md_text: str, n_docs: int, engine_label: str, metrics: dict, recall: str) -> str:
+def _replace_row(md_text: str, n_docs: int, engine_label: str,
+                 metrics: dict, recall: str) -> str:
+    # Patron de fila de tabla, tolerante a espacios.
+    # Formato: | N docs | Motor | [INSERTAR] | [INSERTAR] | ... |
     n_str = f"{n_docs:,}".replace(",", " ")
     # Intenta match con separador de miles con espacio Y sin separador
     for n_variant in (n_str, str(n_docs)):

@@ -36,6 +36,7 @@ echo
 echo "=== [3/4] Graficos PNG ==="
 python3 scripts/plot_bench.py --in "$BENCH_JSON" --out-dir docs/graphs
 
+# Graficos de escalabilidad si el usuario acumulo mas de un JSON
 SCALE_JSONS=(benchmark_fase4_*.json)
 if [[ ${#SCALE_JSONS[@]} -gt 1 && -f "${SCALE_JSONS[0]}" ]]; then
     echo "--- Escalabilidad (multi-carga) ---"
