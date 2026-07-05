@@ -24,6 +24,67 @@ def _vector_literal(values: Iterable[float]) -> str:
     return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
 
 
+# Ajuste dinamico de dimension de columnas pgvector
+_HNSW_INDEX_BY_COLUMN = {
+    ("songs", "audio_emb"): "idx_songs_audio_emb_hnsw",
+    ("products", "image_emb"): "idx_products_image_emb_hnsw",
+}
+
+
+def _current_emb_dim(session, table: str, column: str) -> int | None:
+    row = session.execute(
+        text(
+            """
+            SELECT format_type(a.atttypid, a.atttypmod) AS type_name
+            FROM pg_attribute a
+            JOIN pg_class c ON c.oid = a.attrelid
+            WHERE c.relname = :table AND a.attname = :column
+            """
+        ),
+        {"table": table, "column": column},
+    ).first()
+    if row is None:
+        return None
+    type_name = row[0]
+    # 'vector(1000)' -> 1000
+    if "(" in type_name and ")" in type_name:
+        try:
+            return int(type_name.split("(")[1].split(")")[0])
+        except (IndexError, ValueError):
+            return None
+    return None
+
+
+def ensure_emb_column(table: str, column: str, dim: int) -> bool:
+    if dim <= 0:
+        raise ValueError(f"dim debe ser positiva, recibido {dim}")
+    with get_session() as session:
+        current = _current_emb_dim(session, table, column)
+        if current == dim:
+            return False
+        index_name = _HNSW_INDEX_BY_COLUMN.get((table, column))
+        if index_name:
+            session.execute(text(f"DROP INDEX IF EXISTS {index_name}"))
+        session.execute(text(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {column}"))
+        session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} vector({dim})"))
+        if index_name:
+            session.execute(
+                text(
+                    f"CREATE INDEX {index_name} ON {table} "
+                    f"USING hnsw ({column} vector_cosine_ops)"
+                )
+            )
+        session.commit()
+        return True
+
+
+# Reset / truncate
+def reset_table(table: str) -> None:
+    with get_session() as session:
+        session.execute(text(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE"))
+        session.commit()
+
+
 # Inserts
 def _insert_one_returning_id(sql: str, params: dict) -> int:
     with get_session() as session:
@@ -153,12 +214,111 @@ def save_product(
     return _insert_one_returning_id(_PRODUCT_INSERT_SQL, params)
 
 
+def save_codebook(
+    app: str,
+    modality: str,
+    codebook_size: int,
+    bag_of_words: list[str] | None = None,
+    centroids_path: str | None = None,
+    index_dir: str | None = None,
+) -> int:
+    params = {
+        "app": app,
+        "modality": modality,
+        "codebook_size": codebook_size,
+        "bag_of_words": json.dumps(bag_of_words) if bag_of_words is not None else None,
+        "centroids_path": centroids_path,
+        "index_dir": index_dir,
+    }
+    with get_session() as session:
+        row = session.execute(
+            text(
+                """
+                INSERT INTO codebooks (
+                    app, modality, codebook_size,
+                    bag_of_words, centroids_path, index_dir
+                ) VALUES (
+                    :app, :modality, :codebook_size,
+                    CAST(:bag_of_words AS jsonb), :centroids_path, :index_dir
+                )
+                ON CONFLICT (app, modality) DO UPDATE SET
+                    codebook_size = EXCLUDED.codebook_size,
+                    bag_of_words = EXCLUDED.bag_of_words,
+                    centroids_path = EXCLUDED.centroids_path,
+                    index_dir = EXCLUDED.index_dir,
+                    created_at = NOW()
+                RETURNING id
+                """
+            ),
+            params,
+        ).one()
+        session.commit()
+        return int(row[0])
+
+
+def load_codebook(app: str, modality: str) -> dict | None:
+    with get_session() as session:
+        row = session.execute(
+            text(
+                """
+                SELECT codebook_size, bag_of_words, centroids_path, index_dir
+                FROM codebooks WHERE app = :app AND modality = :modality
+                """
+            ),
+            {"app": app, "modality": modality},
+        ).first()
+        if row is None:
+            return None
+        return {
+            "codebook_size": int(row[0]),
+            "bag_of_words": row[1],
+            "centroids_path": row[2],
+            "index_dir": row[3],
+        }
+
+
+def log_search(
+    app: str,
+    modality: str,
+    engine: str,
+    query: str | None,
+    latency_ms: float,
+    n_results: int,
+) -> None:
+    try:
+        with get_session() as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO search_logs (app, modality, engine, query, latency_ms, n_results)
+                    VALUES (:app, :modality, :engine, :query, :latency_ms, :n_results)
+                    """
+                ),
+                {
+                    "app": app,
+                    "modality": modality,
+                    "engine": engine,
+                    "query": query,
+                    "latency_ms": latency_ms,
+                    "n_results": n_results,
+                },
+            )
+            session.commit()
+    except Exception:
+        pass
+
+
 __all__ = [
     "hist_to_dense",
+    "ensure_emb_column",
+    "reset_table",
     "save_song",
     "save_songs_batch",
     "save_product",
     "save_products_batch",
     "_song_params",
     "_product_params",
+    "save_codebook",
+    "load_codebook",
+    "log_search",
 ]
