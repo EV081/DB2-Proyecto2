@@ -43,8 +43,8 @@ SPIMI se implementa desde cero (`src/engine/inverted_index.py`). GIN, GiST y `pg
 
 | Aplicación | Modalidades | Dataset | Volumen | Autenticación |
 |---|---|---|---|---|
-| **App 2 · Búsqueda Musical Inteligente** | Texto (letras) + Audio (waveform) | Spotify Songs Lyrics (Kaggle `imuhammad/audio-features-and-lyrics-of-spotify-songs`) + FMA-large (Free Music Archive, `fma_large.zip` ~93 GB, recortado a 40k con `FMA_LIMIT=40000`) | ~40 000 canciones con letras EN + 40 000 pistas MP3 | Kaggle token + HTTPS directo |
-| **App 4 · Recomendación Multimodal (Fashion)** | Texto (descripciones) + Imagen (JPG) | Fashion Product Images (Kaggle `paramaggarwal/fashion-product-images-dataset`) | ~44 000 productos con imagen + descripción estructurada | Kaggle token |
+| **App · Búsqueda Musical Inteligente** | Texto (letras) + Audio (waveform) | Spotify Songs Lyrics (Kaggle `imuhammad/audio-features-and-lyrics-of-spotify-songs`) + FMA-large (Free Music Archive, `fma_large.zip` ~93 GB, recortado a 40k con `FMA_LIMIT=40000`) | ~40 000 canciones con letras EN + 40 000 pistas MP3 | Kaggle token + HTTPS directo |
+| **App · Recomendación Multimodal (Fashion)** | Texto (descripciones) + Imagen (JPG) | Fashion Product Images (Kaggle `paramaggarwal/fashion-product-images-dataset`) | ~44 000 productos con imagen + descripción estructurada | Kaggle token |
 
 ### 2.2 Preprocesamiento y filtros
 
@@ -431,18 +431,27 @@ Cómo lo enfrentamos en concreto:
 ### 4.1 Marco experimental
 
 - **Cargas:** 10 000 / 20 000 / 30 000 / 40 000 documentos (submuestreo estratificado del corpus real).
+- **Fuente de verdad (ground truth).** La relevancia de un resultado se decide por la **etiqueta de clase** almacenada en Postgres — no por el top-K de ningún motor. Un resultado devuelto es TP cuando su etiqueta coincide con la de la query:
+  - `music/lyrics`: columna `songs.genre` (default; alternativa `artist`)
+  - `music/audio`: columna `songs.genre` (misma columna que lyrics)
+  - `fashion/description`: columna `products.subcategory` (default; alternativa `category`)
+  - `fashion/image`: columna `products.subcategory` (misma columna que descripción)
+
+  Estas etiquetas vienen del dataset original (FMA `tracks.csv`, Spotify Kaggle, Fashion Product Images) y se cargan a Postgres durante el ETL. `compute_recall.py` las lee con un único `SELECT` al inicio y las cachea en un dict `{id → label}`. **Todos los motores (SPIMI, GIN, GiST, pgvector) se evalúan contra la misma tabla de labels** — pgvector no tiene ventaja por ser "de la casa".
 - **Métricas:**
   - Latencia: avg / p50 / p95 en ms por consulta.
   - Throughput: consultas por segundo (`1000 / avg_ms`).
-  - Recall@10: fracción de resultados relevantes en top-10 (relevancia derivada de `genre` / `category` / `subcategory`).
+  - Recall@10: `TP / (relevantes_totales − 1)` — sufre tope estructural cuando la clase tiene cientos de items y `k = 10`.
+  - Precision@10: `TP / |resultados devueltos|`.
+  - Recall_norm@10: `TP / min(k, relevantes_totales − 1)` — evita que un motor con AND estricto (que devuelve pocos hits) parezca "perfecto" solo por retornar poco.
   - Memoria: RSS pico durante indexación (`/proc/self/status:VmHWM`).
   - Almacenamiento: bytes on-disk del índice (`pg_relation_size`, `_spimi_dir_bytes`).
 - **Instrumentación:** `scripts/bench_full.py`, `scripts/compute_recall.py`.
-- **Consultas:** 100 queries por combinación `(motor, modalidad, N)`, mismas para todos los motores.
+- **Consultas:** 100 queries por combinación `(motor, modalidad, N)`, mismas para todos los motores. Cada query es un item real del dataset: para texto, los primeros ~6 tokens de las lyrics o los primeros 200 chars de la descripción; para audio, el `.mp3` completo; para imagen, la foto del producto. La query se excluye del top-K para no contarla como acierto trivial.
 
 ### 4.2 Resultados por app y modalidad
 
-#### App 2 · Música / Lyrics (texto)
+#### App · Música / Lyrics (texto)
 
 Motores comparados: SPIMI, GIN, GiST.
 
@@ -477,7 +486,7 @@ Motores comparados: SPIMI, GIN, GiST.
 
 ![Tamaño índice MB vs N](benchmark/graphs/scale_music_lyrics_index_size_mb.png)
 
-#### App 2 · Música / Audio
+#### App · Música / Audio
 
 | N docs | Motor | avg ms | p50 ms | p95 ms | QPS | Recall@10 | Precision@10 | Recall_norm@10 | F1@10 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -504,7 +513,7 @@ Motores comparados: SPIMI, GIN, GiST.
 
 ![Tamaño índice MB vs N](benchmark/graphs/scale_music_audio_index_size_mb.png)
 
-#### App 4 · Fashion / Description (texto)
+#### App · Fashion / Description (texto)
 
 Motores comparados: SPIMI, GIN, GiST.
 
@@ -537,7 +546,7 @@ Motores comparados: SPIMI, GIN, GiST.
 
 ![Tamaño índice MB vs N](benchmark/graphs/scale_fashion_desc_index_size_mb.png)
 
-#### App 4 · Fashion / Image
+#### App · Fashion / Image
 
 | N docs | Motor | avg ms | p50 ms | p95 ms | QPS | Recall@10 | Precision@10 | Recall_norm@10 | F1@10 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -795,7 +804,7 @@ python3 scripts/compute_recall.py --k 10
 
 Se implementan **dos** de las Ideas Sugeridas del enunciado, ambas con GUI y con endpoints REST.
 
-### 7.1 App 2 · Búsqueda Musical Inteligente
+### 7.1 App · Búsqueda Musical Inteligente
 
 **GUI.**
 
@@ -817,7 +826,7 @@ curl -X POST "http://127.0.0.1:8000/api/music/search/audio?engine=pgvector&k=10"
   -F "file=@sample.mp3"
 ```
 
-### 7.2 App 4 · Recomendación Multimodal (Fashion)
+### 7.2 App · Recomendación Multimodal (Fashion)
 
 **GUI.**
 

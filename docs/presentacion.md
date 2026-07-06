@@ -226,76 +226,241 @@ Postgres expone esto como un operador nativo de distancia sobre los mismos vecto
 
 # Metodología
 
-- **Cargas**: N = 10,000 / 20,000 / 30,000 / 40,000 documentos (subset por symlinks sobre el corpus real, `benchmark/run_all.sh`)
-- **Métricas**: latencia (avg / p50 / p95 ms), throughput (qps), memoria pico (RSS), tamaño en disco del índice
-- **Precisión normalizada (recall_norm@10)**: divide entre min(K, relevantes) en vez de entre el total de resultados devueltos — evita que un motor parezca "perfecto" solo por devolver pocos resultados (caso GIN/GiST con AND estricto)
-- **Consultas**: 100 queries por combinación `(motor, modalidad, N)`, las mismas para los 4 motores, k=10
-- **Orden de análisis**: se sigue el flujo del pipeline — primero búsqueda por **texto** (los 2 datasets), luego **audio**, luego **imagen**
+- **Cargas**: N = 10,000 / 20,000 / 30,000 / 40,000 documentos
+- **Fuente de verdad**: la etiqueta de clase almacenada en Postgres — un resultado es TP si su etiqueta coincide con la de la query
+  - `music/lyrics` y `music/audio` → columna `genre`
+  - `fashion/description` y `fashion/image` → columna `subcategory`
+- **Métricas**: latencia (avg / p50 / p95 ms), throughput (QPS), memoria pico (RSS), tamaño en disco del índice, accesos a disco en SPIMI (`io_seeks`)
+- **recall_norm@10** = TP / min(K, relevantes) — evita que un motor con AND estricto (GIN/GiST) parezca "perfecto" solo por devolver 1-2 hits
+- **Consultas**: 100 por `(motor, modalidad, N)`, las mismas para los 4 motores, k=10. Cada query es un item real del dataset y se excluye del top-K para no contarla como acierto trivial
 
 ---
 
 <!-- _class: small -->
 
-# Resultados — Búsqueda por Texto (Letras + Descripción)
+# Resultados — Texto: Letras (Music)
 
-![w:1150](../img/results-texto.png)
+<div class="result-row">
+<div class="col-img">
 
-En Letras los 3 motores empatan en recall_norm (~0.01) — la etiqueta de género no correlaciona con similitud textual, la comparación real es por latencia (GIN/GiST ~10x más rápidos). En Descripción, SPIMI cubre casi el 90% del top-10 alcanzable; GIN/GiST devuelven pocos resultados por query (AND estricto) y su precisión aparente de 100% es engañosa.
+![w:520](../benchmark/graphs/music_lyrics_latency.png)
+
+</div>
+<div class="col-table">
+
+**N = 40,000 · <span class="chip chip-spimi">SPIMI</span> <span class="chip chip-gin">GIN</span> <span class="chip chip-gist">GiST</span>**
+
+| Motor | avg ms | QPS | recall@10 | precision@10 | recall_norm@10 |
+|---|---:|---:|---:|---:|---:|
+| SPIMI | 82.7 | 12 | 0.000 | 0.014 | 0.014 |
+| GIN | 8.5 | 117 | 0.001 | 0.033 | 0.013 |
+| GiST | 7.7 | 130 | 0.001 | 0.033 | 0.013 |
+
+Los tres motores **empatan** en precision y recall_norm — la etiqueta de género no correlaciona con similitud textual sobre TF-IDF de letras. `recall@10` está en el suelo por tope estructural (cientos de canciones por género, k = 10). La comparación real es por latencia: **GIN/GiST ~10× más rápidos**; SPIMI solo responde 78/100 queries.
+
+</div>
+</div>
 
 ---
 
-# Resultados — Búsqueda por Audio (Música)
+<!-- _class: small -->
 
-![w:1100](../img/results-audio.png)
+# Resultados — Texto: Descripción (Fashion)
 
-Motores comparados: <span class="chip chip-spimi">SPIMI</span> <span class="chip chip-pgvector">pgvector</span> (HNSW) — clip de audio como query, similitud coseno sobre el codebook acústico. SPIMI es ~3.9x más lento pero le gana levemente en recall_norm — el ranking exacto por coseno no pierde información, HNSW aproxima.
+<div class="result-row">
+<div class="col-img">
+
+![w:520](../benchmark/graphs/fashion_desc_latency.png)
+
+</div>
+<div class="col-table">
+
+**N = 40,000 · <span class="chip chip-spimi">SPIMI</span> <span class="chip chip-gin">GIN</span> <span class="chip chip-gist">GiST</span>**
+
+| Motor | avg ms | QPS | recall@10 | precision@10 | recall_norm@10 |
+|---|---:|---:|---:|---:|---:|
+| SPIMI | 76.2 | 13 | 0.009 | 0.988 | **0.892** |
+| GIN | 3.2 | 314 | 0.003 | 1.000 | 0.514 |
+| GiST | 3.0 | 331 | 0.003 | 1.000 | 0.514 |
+
+GIN/GiST son **~24× más rápidos** pero solo responden 44/100 queries (AND estricto). Su `precision = 1.000` engaña — cuando responden con 1-2 hits, los aciertan, pero cubren mucho menos del top-10 posible. **recall_norm** normaliza por k y expone que SPIMI cubre ~90% vs ~51%. `recall@10` sigue bajo por tope estructural (cientos de items por subcategoría).
+
+</div>
+</div>
 
 ---
 
-# Resultados — Búsqueda por Imagen (Fashion)
+<!-- _class: small -->
 
-![w:1100](../img/results-imagen.png)
+# Resultados — Audio (Music)
 
-Motores comparados: <span class="chip chip-spimi">SPIMI</span> <span class="chip chip-pgvector">pgvector</span> (HNSW) — foto de producto como query, similitud coseno sobre el codebook visual. Aquí pgvector gana en ambos frentes: ~13x más rápido y con mayor recall_norm — el embedding denso captura información espacial que SIFT+BoVW pierde.
+<div class="result-row">
+<div class="col-img">
+
+![w:520](../benchmark/graphs/music_audio_latency.png)
+
+</div>
+<div class="col-table">
+
+**<span class="chip chip-spimi">SPIMI</span> <span class="chip chip-pgvector">pgvector</span> (HNSW) · similitud coseno sobre codebook MFCC (k = 500)**
+
+| N | Motor | avg ms | QPS | recall@10 | precision@10 | recall_norm@10 |
+|---|---|---:|---:|---:|---:|---:|
+| 10k | SPIMI | 138 | 7.2 | 0.006 | 0.380 | 0.342 |
+| 10k | pgvector | 79 | 12.7 | 0.005 | 0.343 | 0.309 |
+| 40k | SPIMI | 320 | 3.1 | 0.002 | **0.285** | **0.257** |
+| 40k | pgvector | 83 | 12.0 | 0.001 | 0.249 | 0.224 |
+
+pgvector ~4× más rápido, pero **SPIMI le gana en precision y recall_norm** — el ranking exacto por coseno no pierde información, HNSW aproxima. `recall@10` bajo por tope de clase (miles de pistas por género vs k = 10). Brecha manejable en esta escala.
+
+</div>
+</div>
 
 ---
 
-# Dimensionalidad y mitigaciones
+<!-- _class: small -->
 
-**Análisis de dimensionalidad** (analítico, no depende del benchmark):
+# Resultados — Imagen (Fashion)
 
-- Dimensiones: texto **1,000**, audio **500**, imagen **1,024** — histogramas muy dispersos (típicamente 50-200 componentes no-cero)
-- Mitigaciones aplicadas: cuantización a k codewords, coseno + normalización L2, poda IDF de términos ubicuos, subsampling estratificado para K-Means, HNSW aproximado en lugar de KNN exacto
+<div class="result-row">
+<div class="col-img">
+
+![w:520](../benchmark/graphs/fashion_image_latency.png)
+
+</div>
+<div class="col-table">
+
+**<span class="chip chip-spimi">SPIMI</span> <span class="chip chip-pgvector">pgvector</span> (HNSW) · similitud coseno sobre codebook SIFT (k = 1,024)**
+
+| N | Motor | avg ms | QPS | recall@10 | precision@10 | recall_norm@10 |
+|---|---|---:|---:|---:|---:|---:|
+| 10k | SPIMI | 598 | 1.7 | 0.006 | 0.540 | 0.486 |
+| 10k | pgvector | 179 | 5.6 | 0.005 | 0.560 | 0.505 |
+| 40k | SPIMI | **2 169** | 0.5 | 0.002 | 0.396 | 0.356 |
+| 40k | pgvector | 167 | 6.0 | 0.002 | **0.473** | **0.426** |
+
+pgvector **gana en los tres frentes**: ~13× más rápido, mejor precision y mejor recall_norm. SPIMI cruza los 2 s por query a N=40k (fuera de rango interactivo). `recall@10` bajo por tope estructural (cientos de productos por subcategoría).
+
+</div>
+</div>
+
+---
+
+<!-- _class: small -->
+
+# Escalabilidad — latencia vs N (10k → 40k)
+
+<div class="two-panel">
+<div>
+
+![w:560](../benchmark/graphs/scale_fashion_image_avg_ms.png)
+
+</div>
+<div>
+
+![w:560](../benchmark/graphs/scale_music_audio_avg_ms.png)
+
+</div>
+</div>
+
+En **imagen** SPIMI pasa de 598 ms → 2 168 ms mientras pgvector se mantiene entre 167-179 ms. En **audio** SPIMI escala de 138 ms → 320 ms mientras pgvector oscila en ~79-83 ms. La pendiente cuenta la historia: **SPIMI crece con N** (scan lineal sobre posting lists sin skip lists), **HNSW es plano** (navegación logarítmica del grafo).
+
+---
+
+<!-- _class: small -->
+
+# Escalabilidad — factor de crecimiento por modalidad
+
+<div class="result-row">
+<div class="col-img">
+
+![w:520](../benchmark/graphs/scale_music_lyrics_avg_ms.png)
+
+</div>
+<div class="col-table">
+
+| Modalidad | Motor | 10k → 40k | Factor |
+|---|---|---|---:|
+| lyrics | SPIMI | 20 → 82 ms | **4.1×** |
+| lyrics | GIN | 3.2 → 8.5 ms | 2.7× |
+| desc | SPIMI | 19 → 76 ms | **4.0×** |
+| desc | GIN | 1.9 → 3.2 ms | 1.7× |
+| audio | SPIMI | 138 → 320 ms | 2.3× |
+| audio | pgvector | 79 → 83 ms | **1.06×** |
+| image | SPIMI | 598 → 2 168 ms | 3.6× |
+| image | pgvector | 179 → 167 ms | **0.94×** |
+
+**SPIMI escala casi lineal en texto** (4× datos → 4× latencia). **pgvector es plano** — con más datos la brecha se agranda. GIN también crece pero con base tan baja (~3 ms) que es irrelevante.
+
+</div>
+</div>
+
+---
+
+<!-- _class: small -->
+
+# Costo en disco y RAM (N = 40,000)
+
+<div class="result-row">
+<div class="col-img">
+
+![w:520](../benchmark/graphs/scale_fashion_image_index_size_mb.png)
+
+</div>
+<div class="col-table">
+
+| Motor | Modalidad | RSS pico (MB) | Índice on-disk (MB) |
+|---|---|---:|---:|
+| SPIMI | lyrics | 396 | **132.5** |
+| SPIMI | desc | 505 | 9.6 |
+| SPIMI | audio | 497 | 27.6 |
+| SPIMI | image | 642 | 96.4 |
+| GIN | lyrics | 396 | 16.5 |
+| GIN | desc | 505 | 3.0 |
+| pgvector | audio | 497 | 102.9 |
+| pgvector | image | 646 | **307.3** |
+
+- **SPIMI en texto ~8× más pesado que GIN** — postings crudas como JSON, sin compresión de posting trees
+- **SPIMI en audio/imagen 3-4× más liviano que pgvector** — histogramas BoVW son sparse (50-200 dim no-cero) vs. embeddings densos
+- **pgvector paga overhead del grafo HNSW** — 307 MB para 40k × 1024 float
+
+</div>
+</div>
+
+---
+
+<!-- _class: small -->
+
+# Impacto de dimensionalidad y accesos a disco
+
+| Modalidad | Codebook k | Descriptores por doc | SPIMI @ N=40k | Motor nativo @ N=40k | Ratio |
+|---|---:|---:|---:|---:|---:|
+| Texto (lyrics) | 1 000 | ~50-200 stems únicos | 82.7 ms | GIN 8.5 ms | 10× |
+| Texto (desc) | 1 000 | ~10-50 stems únicos | 76.2 ms | GIN 3.2 ms | 24× |
+| Audio (MFCC) | 500 | ~300 frames | 320.4 ms | pgvector 83.2 ms | 4× |
+| Imagen (SIFT) | 1 024 | ~500-2 000 keypoints | **2 168.9 ms** | pgvector 167.2 ms | 13× |
+
+- **Codebook chico + descriptores densos = SPIMI se degrada.** En imagen cada codeword aparece en 40-60% de los documentos → posting lists enormes → scan TAAT costoso. En texto natural funciona: cada canción usa ~50-200 stems únicos de 1 000 (Zipf), las posting lists son manejables.
+- **HNSW no escala con la dimensión del vector.** dim 500 → 1 024 solo duplica la latencia de pgvector (83 → 167 ms); en SPIMI la latencia se multiplica por **7×** (320 → 2 169 ms).
+- **Accesos a disco (instrumentados en SPIMI).** El bottleneck real son los `io_seeks` por término, no los bytes totales leídos — solo se cargan las posting lists de los términos de la query, nunca el vocabulario completo.
+- **Mitigaciones aplicadas.** Cuantización a k codewords, coseno + normalización L2, poda IDF de términos ubicuos, subsampling estratificado para K-Means, HNSW aproximado en lugar de KNN exacto.
 
 ---
 
 <!-- _class: section -->
 
-# 8. Análisis de Trade-offs y Conclusiones
+# 8. Conclusiones
 
 ---
 
-<!-- _class: small -->
+# Conclusiones del proyecto
 
-# Simplicidad (SPIMI) vs. Sofisticación (Postgres nativo)
+- **Arquitectura unificada** — el mismo pipeline de 4 pasos cubre texto, audio e imagen sin código específico por modalidad
+- **Postgres nativo domina en velocidad** — a N=40k, 10× (lyrics), 24× (desc), 4× (audio), 13× (imagen) más rápido que SPIMI
+- **SPIMI gana en precisión donde importa** — recall_norm superior en Descripción (0.892 vs 0.514) y Audio (0.257 vs 0.224) por ranking exacto
+- **Recomendación**: texto → <span class="chip chip-gin">GIN</span>, audio e imagen → <span class="chip chip-pgvector">pgvector</span>, descripción → híbrido
 
-| | <span class="chip chip-spimi">SPIMI (propio)</span> | <span class="chip chip-pgvector">pgvector HNSW</span> | <span class="chip chip-gin">GIN</span> / <span class="chip chip-gist">GiST</span> |
-|---|---|---|---|
-| Memoria en query | Baja (stream desde disco) | Alta (grafo en `shared_buffers`) | Intermedia (buffers/WAL de Postgres) |
-| I/O | Muchos `seeks` por término | Sin seeks per-query | Gestionado por Postgres |
-| Exactitud | Exacto (coseno TF-IDF) | Aproximado (`ef_search` ajustable) | Exacto (full-text) |
-| Mejor caso | Corpus grande, RAM limitada | Baja latencia, corpus grande | Full-text clásico |
-
-A N=40,000, los motores nativos siempre ganan en velocidad (4x a 24x según modalidad). Pero en recall_norm@10: en Letras los 3 empatan; en Descripción y Audio **SPIMI gana** (ranking exacto no pierde información); en Imagen **pgvector gana en ambos frentes** — ver sección de evaluación (slide 7).
-
----
-
-# Limitaciones del modelo Bag-of-Visual-Words
-
-- **SIFT + BoVW** captura **textura y gradientes locales**, no "objeto" — fuerte para encontrar la misma prenda exacta, débil para retrieval semántico por categoría
-- Sistemas modernos usan features **CNN (ResNet, CLIP)** para semántica real — subir `k` en K-Means no cierra esa brecha, habría que cambiar el extractor
-- **K-Means artesanal** (implementado desde cero) es más lento que librerías optimizadas como FAISS — decisión consciente: el enunciado exige un motor propio construido desde cero
-- Música: Spotify (letras) y FMA (audio) son fuentes distintas → ninguna canción queda indexada en ambas modalidades a la vez (simplificación honesta, no falsa bimodalidad)
+**Limitación principal.** SIFT + BoVW captura textura, no "objeto" — retrieval semántico por categoría necesitaría features CNN (ResNet, CLIP), no más `k` en K-Means.
 
 ---
 
@@ -305,7 +470,7 @@ A N=40,000, los motores nativos siempre ganan en velocidad (4x a 24x según moda
 
 ---
 
-# App 2 · Búsqueda Musical Inteligente
+# App · Búsqueda Musical Inteligente
 
 **Modalidad primaria**: Audio + Texto
 
@@ -315,7 +480,7 @@ A N=40,000, los motores nativos siempre ganan en velocidad (4x a 24x según moda
 
 ---
 
-# App 4 · Recomendación Multimodal (Fashion)
+# App · Recomendación Multimodal (Fashion)
 
 **Modalidad primaria**: Imagen + Descripción
 

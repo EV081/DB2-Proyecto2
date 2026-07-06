@@ -12,5 +12,5 @@ data/
 indexes/
 codebooks/
 .gstack/
-benchmark/tmp/
+benchmark/tmp
 benchmark/run.log

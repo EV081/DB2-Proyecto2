@@ -10,7 +10,7 @@ python-multipart==0.0.32
 
 librosa
 soundfile
-opencv-python
+opencv-python-headless
 nltk
 scikit-learn
 
