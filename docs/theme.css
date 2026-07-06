@@ -23,13 +23,31 @@ section {
   padding: 40px 60px;
 }
 
+footer {
+  color: var(--muted);
+  font-size: 0.42em;
+  opacity: 0.75;
+}
+
 /* Title slide */
 section.lead {
+  position: relative;
   background: #ffffff;
   text-align: center;
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+
+/* Four-engine color bar — same identity as the GRID frontend */
+section.lead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, var(--amber-mid), var(--gin), var(--gist), var(--pgvector));
 }
 
 section.lead h1 {
@@ -165,14 +183,32 @@ img {
 
 /* Section slide */
 section.section {
+  position: relative;
   background: var(--amber-pale);
   display: flex;
   flex-direction: column;
   justify-content: center;
   text-align: center;
+  overflow: hidden;
+}
+
+/* Soft glow behind the section title, for visual weight */
+section.section::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 340px;
+  height: 340px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(184, 114, 10, 0.16), transparent 70%);
+  z-index: 0;
 }
 
 section.section h1 {
+  position: relative;
+  z-index: 1;
   font-size: 2em;
   border-bottom: none;
   color: var(--ink);
@@ -232,12 +268,46 @@ section.small pre {
   font-size: 0.7em;
   font-weight: 600;
   color: white;
+  /* anillo blanco para que no se camufle sobre fondos del mismo color (ej. th ambar) */
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.7);
 }
 
-.chip-spimi { background: var(--amber-mid); }
+.chip-spimi { background: var(--amber-dark); }
 .chip-gin { background: var(--gin); }
 .chip-gist { background: var(--gist); }
 .chip-pgvector { background: var(--pgvector); }
+
+/* Stat tiles — mismo lenguaje visual que los tiles del frontend GRID */
+.stat-row {
+  display: flex;
+  gap: 16px;
+  margin: 14px 0;
+}
+
+.stat {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--amber-mid);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat .stat-label {
+  font-size: 0.5em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.stat .stat-value {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.85em;
+  font-weight: 700;
+  color: var(--ink);
+}
 
 /* Pending-data placeholder callout */
 .pending {
@@ -247,4 +317,61 @@ section.small pre {
   color: var(--muted);
   font-size: 0.7em;
   background: #fafafa;
+}
+
+/* Dataset / stage name pill */
+.badge {
+  display: inline-block;
+  padding: 4px 16px;
+  border-radius: 999px;
+  background: var(--amber-dark);
+  color: white;
+  font-weight: 700;
+  font-size: 0.7em;
+  margin-bottom: 6px;
+}
+
+.badge-row {
+  display: flex;
+  gap: 20px;
+  margin: 10px 0;
+}
+
+.badge-row > div {
+  flex: 1;
+}
+
+.badge-row p {
+  font-size: 0.68em;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* Parámetros: corner callout, for Markdown-level (not baked into a diagram) */
+.params-box {
+  border-left: 4px solid var(--amber-mid);
+  background: var(--amber-pale);
+  border-radius: 0 8px 8px 0;
+  padding: 8px 14px;
+  font-size: 0.62em;
+}
+
+.params-box strong {
+  color: var(--amber-dark);
+}
+
+.params-box ul {
+  margin: 4px 0 0 0;
+}
+
+/* Two-panel side-by-side layout, for result chart pairs (Precision/Recall + Latencia) */
+.two-panel {
+  display: flex;
+  gap: 20px;
+  margin-top: 10px;
+}
+
+.two-panel > div {
+  flex: 1;
+  min-width: 0;
 }

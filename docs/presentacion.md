@@ -2,6 +2,7 @@
 marp: true
 theme: utec-multimodal
 paginate: true
+footer: 'Sistema Multimodal de Recuperación y Búsqueda · Base de Datos II · UTEC'
 ---
 
 <!-- _class: lead -->
@@ -26,37 +27,46 @@ Elmer Villegas · Juan Carlos Ticlia · Joseph Anderson Cose · Josué Hernánde
 
 # Un solo paradigma para texto, audio e imagen
 
-El sistema aplica **la misma tubería de 4 pasos** sin importar la modalidad, para poder comparar motores de forma justa sobre el mismo corpus:
+El sistema aplica **la misma tubería de cuatro pasos** sin importar la modalidad, para poder comparar motores de forma justa sobre el mismo corpus: fragmentar el contenido, extraer sus características, reducirlas a un vocabulario finito, y construir un índice sobre ese vocabulario.
 
-```
-Split (fragmentar) → Extraction (features) → Codebook (cuantizar) → Inverted Index
-```
-
-- **Split** — párrafos (texto), ventanas deslizantes (audio), parches/keypoints (imagen)
-- **Extraction** — TF-IDF, MFCC, SIFT según modalidad
-- **Codebook** — vocabulario finito compartido: top-K stems / K-Means acústico / K-Means visual
-- **Inverted Index** — histograma de "codewords" por documento, mismo motor SPIMI para las tres modalidades
+- **Fragmentar** — párrafos (texto), ventanas de tiempo (audio), regiones de la imagen
+- **Extraer características** — un descriptor numérico distinto según la modalidad
+- **Vocabulario finito (codebook)** — se comparte entre el motor propio y los nativos de Postgres
+- **Índice invertido** — mismo motor (SPIMI) para las tres modalidades
 
 ---
 
+<!-- _class: small -->
+
 # Vista global del sistema
 
-![h:480](../img/arq-glob.png)
+<div class="result-row">
+<div class="col-img">
+
+![h:360](../img/arq-glob.png)
+
+</div>
+<div class="col-table">
+
+**Zona offline — procesamiento**
+- Los datasets entran al pipeline ML común (Split → Extracción → Codebook → Histograma)
+- El ETL persiste el índice SPIMI local **y** los vectores/tsvector en PostgreSQL
+
+**Zona de consulta — online**
+- El frontend envía la query al **API Gateway**, que decide a qué motor enrutarla
+- El gateway consulta en paralelo al **motor SPIMI** y/o a **PostgreSQL**
+- Ambos devuelven el mismo formato de respuesta unificada
+
+</div>
+</div>
 
 ---
 
 # Pipeline unificado end-to-end
 
-![h:480](../img/general-flow.png)
+![w:1150](../img/pipeline-overview.png)
 
----
-
-# Decisiones arquitectónicas clave
-
-- **Un mismo histograma discreto** para las tres modalidades → mismo índice invertido, misma métrica coseno
-- **Persistencia triple por documento**: histograma JSONB (auditoría), vector denso `vector(k)` (pgvector), columna `tsvector` generada (GIN/GiST)
-- **Router en el backend, no SQL desde el cliente** — el "parser" es un despachador `(motor, modalidad) → función`; las 4 rutas devuelven el mismo dict `{id, score, engine, latency_ms, ...}`
-- **Codebooks compartidos** entre SPIMI y pgvector — ven exactamente el mismo histograma, así la única variable que cambia es el motor
+Cinco fases, la **misma estructura para las tres modalidades** — solo cambia el extractor y el tamaño del codebook (`k`) en cada fase.
 
 ---
 
@@ -66,38 +76,27 @@ Split (fragmentar) → Extraction (features) → Codebook (cuantizar) → Invert
 
 ---
 
-# Texto — Tokenización + Porter Stemmer
+# Texto — Normalización y reducción a raíces
 
-```
-lowercase(texto) → strip(puntuación, dígitos) → split(whitespace)
-  → remover stopwords (NLTK inglés, ~180) → stem (Porter)
-```
+![w:1150](../img/text-pipeline-detailed.png)
 
-- Salida: `dict[stem, tf]` por chunk (párrafo)
-- **TF-IDF**: `w(t,d) = log_tf(t,d) · idf(t)`, con `log_tf = 1 + log10(tf)` si `tf > 0`
-- Filtrado a inglés vía el campo `language` del dataset — las stopwords/stemmer de NLTK están entrenados en inglés
-
-![w:950](../img/text-flow.png)
+Seis pasos, del texto crudo al histograma persistido — la misma lógica de fragmentar, extraer y cuantizar que ya vimos a nivel general, aplicada a texto.
 
 ---
 
-# Audio — MFCC (Mel-Frequency Cepstral Coefficients)
+# Audio — Extracción de coeficientes cepstrales (MFCC)
 
-- `librosa.load(sr=22050, mono=True)` → `librosa.feature.mfcc(n_mfcc=13, hop_length=256, n_fft=512)`
-- Cada pista de 30s produce una matriz `(T, 13)` con `T ≈ 3000` frames
-- Cacheo en `.npy` por pista (`feature_cache.py`) — la extracción es la etapa más costosa, se evita recalcular en corridas siguientes
+![w:1150](../img/audio-extractor.png)
 
-![w:950](../img/audio-flow.png)
+El resultado se cachea por pista, ya que el cálculo de MFCC es la etapa más costosa del pipeline de audio.
 
 ---
 
-# Imagen — SIFT (Scale-Invariant Feature Transform)
+# Imagen — Detección de puntos clave (SIFT)
 
-- `cv2.SIFT_create().detectAndCompute()` → descriptores locales de **128 dimensiones**
-- Entre 200 y 2,000 keypoints por imagen, según textura/complejidad visual
-- Detecta puntos clave invariantes a escala y rotación — útil para encontrar la misma prenda/instancia visual
+![w:1150](../img/image-extractor.png)
 
-![w:950](../img/imagen-flow.png)
+Esto permite reconocer la misma prenda o instancia visual aunque cambie el tamaño, el ángulo o la posición en la foto.
 
 ---
 
@@ -111,27 +110,24 @@ lowercase(texto) → strip(puntuación, dígitos) → split(whitespace)
 
 La idea central: convertir descriptores locales continuos en un vocabulario **discreto y finito**, igual que un diccionario de palabras para texto.
 
-- **Texto**: se seleccionan las **k = 1,000** stems más frecuentes de todo el corpus (por Zipf, ~1000 stems cubren >90% de las ocurrencias)
-- **Audio / Imagen**: K-Means agrupa todos los descriptores locales (MFCC / SIFT) de todo el dataset → cada centroide es una **"palabra acústica"** o **"palabra visual"**
+![w:1050](../img/codebook-formation.png)
 
-```
-Extracción → Agrupación (K-Means) → k centroides = codebook
-Documento → histograma de conteo de codewords (bag-of-words / BoVW / BoAW)
-```
+Para texto el mismo principio se aplica sin K-Means: el vocabulario son las palabras más frecuentes del corpus (por la ley de Zipf, un puñado de raíces cubre la gran mayoría de las ocurrencias).
 
 ---
 
-# K-Means propio (`KClustering`)
+# K-Means propio
 
-| Modalidad | k (centroides) | Vectores de entrenamiento (muestreo) |
+Implementado desde cero para este proyecto — no usa librerías externas de clustering.
+
+| Modalidad | Tamaño del codebook | Muestra de entrenamiento |
 |---|---:|---:|
-| Audio (MFCC) | 500 | 50,000 |
-| Imagen (SIFT) | 1,024 | 150,000 |
+| Audio (MFCC) | 500 palabras acústicas | 50,000 descriptores |
+| Imagen (SIFT) | 1,024 palabras visuales | 150,000 descriptores |
 
-- Inicialización gaussiana, asignación por batch (`batch_size=100,000`), tolerancia `1e-6`, `max_iter=100`
-- Clusters vacíos conservan su centroide anterior en vez de reinicializarse (evita oscilación)
-- Regla operativa: `max_samples ≥ 100·k` — evidencia estadística mínima por centroide
-- **Cuantización**: cada descriptor local se asigna al centroide más cercano (distancia euclidiana) → histograma de conteos: `a_0000...a_0499` (audio), `v_0000...v_1023` (imagen)
+- Se entrena una sola vez por modalidad, sobre una muestra representativa del dataset completo
+- Un centroide que se queda sin puntos asignados conserva su posición anterior, en vez de reiniciarse al azar — evita que el entrenamiento oscile
+- Una vez entrenado, cada descriptor nuevo se asigna al centroide más cercano para construir el histograma del documento
 
 ---
 
@@ -143,35 +139,17 @@ Documento → histograma de conteo de codewords (bag-of-words / BoVW / BoAW)
 
 # SPIMI — Single-Pass In-Memory Indexing
 
-Resuelve indexar un corpus **más grande que la RAM disponible**, en dos fases:
+Resuelve indexar un corpus **más grande que la RAM disponible**, sin necesitar tenerlo todo en memoria a la vez.
 
-**Fase 1 — Inversión por bloques**
-```
-para cada (doc_id, term_freqs):
-    para cada (term, tf): posting_list[term].append((doc_id, tf))
-    si posting_bytes_acumulados >= block_size: volcar bloque a disco y limpiar memoria
-```
-
-**Fase 2 — Merge externo**
-- K-way merge con **min-heap** `(term, block_idx)` sobre todos los bloques
-- Produce: `final.postings` (binario), `vocab.json` (`term → offset, df`), `meta.json` (stats + normas)
+![w:1100](../img/spimi-build.png)
 
 ---
 
 # Consulta sobre el índice invertido
 
-```
-1. Cargar vocab.json en memoria
-2. Por cada termino q en la query:
-     si q ∈ vocab: fseek(offset), fread(bytes) → posting list de q
-     acumular score TF-IDF por doc_id
-3. Normalizar por ‖q‖·‖d_i‖ (cache en meta.json)
-4. Devolver top-K
-```
+![w:1150](../img/spimi-query.png)
 
-- Solo se itera sobre los **términos de la query** (típicamente 2-8), nunca sobre el vocabulario completo
-- Se instrumentan contadores `io_seeks` e `io_read_bytes` por consulta — permite medir el costo real de disco
-- El mismo motor (`InvertedIndex.search_topk`) sirve para texto, audio e imagen: un codeword (`a_0037`, `v_0512`) funciona como una palabra cualquiera
+Solo se leen del disco las posting lists de los términos de la query — nunca el vocabulario completo. El mismo mecanismo sirve para texto, audio e imagen: un "codeword" visual o acústico se busca exactamente igual que una palabra.
 
 ---
 
@@ -183,36 +161,26 @@ para cada (doc_id, term_freqs):
 
 # Full-text search — GIN vs GiST
 
-Columnas `tsvector` **generadas** automáticamente, sin triggers:
+Postgres mantiene una columna de búsqueda de texto que se actualiza sola cada vez que cambia el contenido — no hace falta código adicional para mantenerla sincronizada.
 
-```sql
-lyrics_tsv tsvector GENERATED ALWAYS AS
-    (to_tsvector('english', coalesce(lyrics_text, ''))) STORED;
-```
+| Índice | Cómo busca | Mejor para |
+|---|---|---|
+| **GIN** | Índice invertido clásico: palabra → lista de documentos | Lectura muy rápida, escritura más costosa |
+| **GiST** | Árbol balanceado con firmas aproximadas | Escritura más barata, lectura con una verificación extra |
 
-| Índice | Estructura | Escritura | Lectura |
-|---|---|---|---|
-| **GIN** | B+Tree lexema → posting list compacta | Costosa (mitigable con `gin_pending_list_limit`) | Óptima para `@@ plainto_tsquery` |
-| **GiST** | Árbol balanceado, firma comprimida (bloom) | Barata (`log N`) | Con falsos positivos → re-verificación |
-
-Consulta: `ts_rank(tsv, plainto_tsquery('english', :query))`, ordenado por score descendente.
+Ambos devuelven un score de relevancia (qué tan bien calza el texto con la consulta) y permiten ordenar los resultados por ese score.
 
 ---
 
+<!-- _class: small -->
+
 # Búsqueda vectorial — pgvector + HNSW
 
-- **HNSW** (Hierarchical Navigable Small World): grafo multinivel para **ANN** (Approximate Nearest Neighbor)
-- Índices creados sobre los embeddings densos ya cuantizados: letras (1000), audio (500), descripciones (1000), imagen (1024)
-- Operador `<=>` (distancia coseno) directo en SQL:
+**HNSW** (Hierarchical Navigable Small World): grafo organizado en capas que permite encontrar vecinos cercanos sin comparar contra todo el dataset.
 
-```sql
-SELECT *, 1.0 - (audio_emb <=> :query_vec) AS score
-FROM songs
-ORDER BY audio_emb <=> :query_vec
-LIMIT :k;
-```
+![w:680](../img/hnsw-graph.png)
 
-- Trade-off: **aproximado** (calidad ajustable vía `ef_search`) a cambio de `O(log N)` esperado, vs. KNN exacto `O(N·k)`
+Postgres expone esto como un operador nativo de distancia sobre los mismos vectores del pipeline.
 
 ---
 
@@ -222,23 +190,31 @@ LIMIT :k;
 
 ---
 
+<!-- _class: small -->
+
 # Fuentes de datos
 
-| App | Modalidades | Dataset | Volumen | Auth |
-|---|---|---|---|---|
-| **App 2 · Música** | Texto + Audio | Spotify Songs Lyrics (Kaggle) + FMA-small | ~40,000 letras EN + ~8,000 pistas MP3 | Kaggle token + HTTPS |
-| **App 4 · Fashion** | Texto + Imagen | Fashion Product Images (Kaggle) | ~44,000 productos con imagen + descripción | Kaggle token |
+<div class="badge-row">
+<div><span class="badge">Spotify Songs Lyrics</span><p>~40,000 letras, solo en inglés</p></div>
+<div><span class="badge">FMA-(small, Large)</span><p>~40,000 pistas de audio, 8 géneros</p></div>
+<div><span class="badge">Fashion Product Images</span><p>~44,000 productos con imagen + descripción</p></div>
+</div>
 
-- **Letras**: filtradas a inglés por el campo `language` del CSV — mantiene coherente el pipeline de stopwords/stemming
-- **Fashion**: descriptor compuesto de `productDisplayName + gender + masterCategory + subCategory + articleType + baseColour + usage + season`
+| App | Modalidades | Dataset | Auth |
+|---|---|---|---|
+| **App · Música** | Texto + Audio | Spotify Songs Lyrics (Kaggle) + FMA-small | Kaggle token + HTTPS |
+| **App · Fashion** | Texto + Imagen | Fashion Product Images (Kaggle) | Kaggle token |
+
+- **Letras**: se conservan solo las que están en inglés, para que el vocabulario de stopwords y el stemmer sean consistentes en todo el corpus
+- **Fashion**: la descripción de cada producto combina su nombre con los atributos estructurados del catálogo (categoría, color, uso, temporada, etc.)
 
 ---
 
 # Preprocesamiento y muestreo
 
-- **Metadatos de FMA**: extraídos de `fma_metadata.zip` (`tracks.csv`) → `stem,title,artist,genre`
-- **Pareo por `stem`**: en Fashion, imagen y descripción comparten el mismo número → cada producto es un documento bimodal. En música, Spotify (texto) y FMA (audio) usan esquemas de nombre distintos → cada canción es texto-solo o audio-solo, nunca ambas
-- **Muestreo para K-Means** (`aggregate_for_kmeans`): lee cabeceras `.npy` vía `mmap_mode="r"`, sortea `max_samples` índices **uniformemente sobre el pool completo de descriptores** (no por archivo) — respeta la distribución real de textura/timbre. Semilla fija (`seed=42`) para reproducibilidad
+- **Metadatos**: cada pista de audio se enriquece con su título, artista y género antes de retornarse como respuesta al frontend
+- **Pareo de modalidades**: en Fashion, cada producto tiene imagen y descripción, por lo que es un documento bimodal. En música, letras y audio vienen de fuentes distintas, así que cada canción es texto-solo o audio-solo, nunca ambas
+- **Muestreo para K-Means**: en vez de usar todos los descriptores del dataset (inviable en memoria), se toma una muestra uniforme representativa — grande y aleatoria, pero reproducible
 
 ---
 
@@ -250,48 +226,43 @@ LIMIT :k;
 
 # Metodología
 
-- **Cargas**: N = 1,000 / 10,000 / 100,000 documentos (submuestreo estratificado del corpus real)
-- **Métricas**: latencia (avg / p50 / p95 ms), throughput (`1000 / avg_ms` qps), **Recall@10** (relevancia derivada de género/categoría/subcategoría), memoria pico (RSS), tamaño en disco del índice
-- **Instrumentación**: `scripts/bench_full.py`, `scripts/compute_recall.py`, `scripts/bench_and_report.sh`
-- **Consultas**: 100 queries por combinación `(motor, modalidad, N)`, las mismas para los 4 motores
+- **Cargas**: N = 10,000 / 20,000 / 30,000 / 40,000 documentos (subset por symlinks sobre el corpus real, `benchmark/run_all.sh`)
+- **Métricas**: latencia (avg / p50 / p95 ms), throughput (qps), memoria pico (RSS), tamaño en disco del índice
+- **Precisión normalizada (recall_norm@10)**: divide entre min(K, relevantes) en vez de entre el total de resultados devueltos — evita que un motor parezca "perfecto" solo por devolver pocos resultados (caso GIN/GiST con AND estricto)
+- **Consultas**: 100 queries por combinación `(motor, modalidad, N)`, las mismas para los 4 motores, k=10
+- **Orden de análisis**: se sigue el flujo del pipeline — primero búsqueda por **texto** (los 2 datasets), luego **audio**, luego **imagen**
 
 ---
 
-# Latencia y Throughput — Música / Letras
+<!-- _class: small -->
 
-<div class="pending">
+# Resultados — Búsqueda por Texto (Letras + Descripción)
 
-📊 Pendiente de corrida final de benchmarks — tabla y gráfico se completan con `scripts/bench_full.py` sobre el corpus real ya indexado (ver metodología, slide anterior).
+![w:1150](../img/results-texto.png)
 
-</div>
-
-| N docs | SPIMI | GIN | GiST | pgvector |
-|---|---:|---:|---:|---:|
-| 1,000 | — | — | — | — |
-| 10,000 | — | — | — | — |
-| 100,000 | — | — | — | — |
+En Letras los 3 motores empatan en recall_norm (~0.01) — la etiqueta de género no correlaciona con similitud textual, la comparación real es por latencia (GIN/GiST ~10x más rápidos). En Descripción, SPIMI cubre casi el 90% del top-10 alcanzable; GIN/GiST devuelven pocos resultados por query (AND estricto) y su precisión aparente de 100% es engañosa.
 
 ---
 
-# Latencia y Throughput — Música / Audio, Fashion / Descripción e Imagen
+# Resultados — Búsqueda por Audio (Música)
 
-<div class="pending">
+![w:1100](../img/results-audio.png)
 
-📊 Mismas métricas (avg/p50/p95 ms, QPS) pendientes para las 3 combinaciones restantes de `(app, modalidad)`. Estructura de tabla idéntica a la slide anterior.
-
-</div>
+Motores comparados: <span class="chip chip-spimi">SPIMI</span> <span class="chip chip-pgvector">pgvector</span> (HNSW) — clip de audio como query, similitud coseno sobre el codebook acústico. SPIMI es ~3.9x más lento pero le gana levemente en recall_norm — el ranking exacto por coseno no pierde información, HNSW aproxima.
 
 ---
 
-# Recall@10 y análisis de dimensionalidad
+# Resultados — Búsqueda por Imagen (Fashion)
 
-<div class="pending">
+![w:1100](../img/results-imagen.png)
 
-📊 Recall@10 por motor y por carga (N) — pendiente de `scripts/compute_recall.py`.
+Motores comparados: <span class="chip chip-spimi">SPIMI</span> <span class="chip chip-pgvector">pgvector</span> (HNSW) — foto de producto como query, similitud coseno sobre el codebook visual. Aquí pgvector gana en ambos frentes: ~13x más rápido y con mayor recall_norm — el embedding denso captura información espacial que SIFT+BoVW pierde.
 
-</div>
+---
 
-**Lo que sí sabemos de la dimensionalidad** (analítico, no depende del benchmark):
+# Dimensionalidad y mitigaciones
+
+**Análisis de dimensionalidad** (analítico, no depende del benchmark):
 
 - Dimensiones: texto **1,000**, audio **500**, imagen **1,024** — histogramas muy dispersos (típicamente 50-200 componentes no-cero)
 - Mitigaciones aplicadas: cuantización a k codewords, coseno + normalización L2, poda IDF de términos ubicuos, subsampling estratificado para K-Means, HNSW aproximado en lugar de KNN exacto
@@ -304,16 +275,18 @@ LIMIT :k;
 
 ---
 
+<!-- _class: small -->
+
 # Simplicidad (SPIMI) vs. Sofisticación (Postgres nativo)
 
-| | **SPIMI (propio)** | **pgvector HNSW** | **GIN / GiST** |
+| | <span class="chip chip-spimi">SPIMI (propio)</span> | <span class="chip chip-pgvector">pgvector HNSW</span> | <span class="chip chip-gin">GIN</span> / <span class="chip chip-gist">GiST</span> |
 |---|---|---|---|
 | Memoria en query | Baja (stream desde disco) | Alta (grafo en `shared_buffers`) | Intermedia (buffers/WAL de Postgres) |
 | I/O | Muchos `seeks` por término | Sin seeks per-query | Gestionado por Postgres |
 | Exactitud | Exacto (coseno TF-IDF) | Aproximado (`ef_search` ajustable) | Exacto (full-text) |
 | Mejor caso | Corpus grande, RAM limitada | Baja latencia, corpus grande | Full-text clásico |
 
-<div class="pending">📊 Cifras concretas de qué motor gana en qué régimen — pendientes de la sección de evaluación (slide 7).</div>
+A N=40,000, los motores nativos siempre ganan en velocidad (4x a 24x según modalidad). Pero en recall_norm@10: en Letras los 3 empatan; en Descripción y Audio **SPIMI gana** (ranking exacto no pierde información); en Imagen **pgvector gana en ambos frentes** — ver sección de evaluación (slide 7).
 
 ---
 
@@ -336,8 +309,8 @@ LIMIT :k;
 
 **Modalidad primaria**: Audio + Texto
 
-- Buscar canciones **por letra** (full-text: SPIMI / GIN / GiST)
-- Buscar canciones **por similitud acústica** subiendo un clip de audio (SPIMI / pgvector, sobre histogramas MFCC)
+- Buscar canciones **por letra** (full-text: <span class="chip chip-spimi">SPIMI</span> <span class="chip chip-gin">GIN</span> <span class="chip chip-gist">GiST</span>)
+- Buscar canciones **por similitud acústica** subiendo un clip de audio (<span class="chip chip-spimi">SPIMI</span> <span class="chip chip-pgvector">pgvector</span>, sobre histogramas MFCC)
 - Frontend **GRID**: modo comparación lado a lado de hasta 3-4 motores con la misma query, leaderboard de latencia/ranking, letra resaltada en las palabras que hicieron match, reproductor de audio propio para escuchar el resultado
 
 ---
@@ -346,8 +319,8 @@ LIMIT :k;
 
 **Modalidad primaria**: Imagen + Descripción
 
-- Buscar productos **por descripción** (texto: SPIMI / GIN / GiST)
-- Buscar productos **visualmente similares** subiendo una foto (SPIMI / pgvector, sobre histogramas SIFT)
+- Buscar productos **por descripción** (texto: <span class="chip chip-spimi">SPIMI</span> <span class="chip chip-gin">GIN</span> <span class="chip chip-gist">GiST</span>)
+- Buscar productos **visualmente similares** subiendo una foto (<span class="chip chip-spimi">SPIMI</span> <span class="chip chip-pgvector">pgvector</span>, sobre histogramas SIFT)
 - Cada resultado muestra miniatura, categoría, subcategoría y descripción completa del producto
 - Mismo frontend GRID, misma identidad de color por motor, mismo modo de comparación
 
